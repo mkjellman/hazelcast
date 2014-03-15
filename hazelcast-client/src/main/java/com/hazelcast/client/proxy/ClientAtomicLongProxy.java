@@ -19,7 +19,7 @@ package com.hazelcast.client.proxy;
 import com.hazelcast.client.ClientRequest;
 import com.hazelcast.client.spi.ClientProxy;
 import com.hazelcast.concurrent.atomiclong.client.*;
-import com.hazelcast.core.Function;
+import com.hazelcast.core.IFunction;
 import com.hazelcast.core.IAtomicLong;
 import com.hazelcast.nio.serialization.Data;
 
@@ -33,31 +33,31 @@ public class ClientAtomicLongProxy extends ClientProxy implements IAtomicLong {
     private final String name;
     private volatile Data key;
 
-    public ClientAtomicLongProxy(String serviceName, String objectId) {
-        super(serviceName, objectId);
+    public ClientAtomicLongProxy(String instanceName, String serviceName, String objectId) {
+        super(instanceName, serviceName, objectId);
         this.name = objectId;
     }
 
     @Override
-    public <R> R apply(Function<Long, R> function) {
+    public <R> R apply(IFunction<Long, R> function) {
         isNotNull(function, "function");
         return invoke(new ApplyRequest(name, toData(function)));
     }
 
     @Override
-    public void alter(Function<Long, Long> function) {
+    public void alter(IFunction<Long, Long> function) {
         isNotNull(function, "function");
         invoke(new AlterRequest(name, toData(function)));
     }
 
     @Override
-    public long alterAndGet(Function<Long, Long> function) {
+    public long alterAndGet(IFunction<Long, Long> function) {
         isNotNull(function, "function");
         return (Long)invoke(new AlterAndGetRequest(name, toData(function)));
     }
 
     @Override
-    public long getAndAlter(Function<Long, Long> function) {
+    public long getAndAlter(IFunction<Long, Long> function) {
         isNotNull(function, "function");
         return (Long)invoke(new GetAndAlterRequest(name, toData(function)));
     }
@@ -131,4 +131,8 @@ public class ClientAtomicLongProxy extends ClientProxy implements IAtomicLong {
         return key;
     }
 
+    @Override
+    public String toString() {
+        return "IAtomicLong{" + "name='" + name + '\'' + '}';
+    }
 }

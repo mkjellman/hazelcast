@@ -18,8 +18,16 @@ package com.hazelcast.executor;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.ExecutorConfig;
-import com.hazelcast.core.*;
+import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.HazelcastInstanceAware;
+import com.hazelcast.core.IAtomicLong;
 import com.hazelcast.core.ICompletableFuture;
+import com.hazelcast.core.IExecutorService;
+import com.hazelcast.core.ManagedContext;
+import com.hazelcast.core.Member;
+import com.hazelcast.core.MultiExecutionCallback;
+import com.hazelcast.instance.GroupProperties;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.instance.HazelcastInstanceProxy;
 import com.hazelcast.monitor.LocalExecutorStats;
@@ -29,7 +37,7 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.*;
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
@@ -38,12 +46,33 @@ import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 import java.io.Serializable;
 import java.lang.reflect.Field;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category(QuickTest.class)
@@ -59,7 +88,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
     private IExecutorService createSingleNodeExecutorService(String name, int poolSize) {
         final Config config = new Config();
         config.addExecutorConfig(new ExecutorConfig(name, poolSize));
-        final HazelcastInstance instance = createHazelcastInstanceFactory(1).newHazelcastInstance(config);
+        final HazelcastInstance instance = createHazelcastInstance(config);
         return instance.getExecutorService(name);
     }
 
@@ -78,7 +107,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             }
         });
 
-        final HazelcastInstance instance = createHazelcastInstanceFactory(1).newHazelcastInstance(config);
+        final HazelcastInstance instance = createHazelcastInstance(config);
         IExecutorService executor = instance.getExecutorService("test");
 
         RunnableWithManagedContext task = new RunnableWithManagedContext();
@@ -98,7 +127,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
     public void hazelcastInstanceAwareAndLocal()throws Exception{
         final Config config = new Config();
         config.addExecutorConfig(new ExecutorConfig("test", 1));
-        final HazelcastInstance instance = createHazelcastInstanceFactory(1).newHazelcastInstance(config);
+        final HazelcastInstance instance = createHazelcastInstance(config);
         IExecutorService executor = instance.getExecutorService("test");
 
         HazelcastInstanceAwareRunnable task = new HazelcastInstanceAwareRunnable();
@@ -151,10 +180,10 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             final String script = "hazelcast.getAtomicLong('count').incrementAndGet();";
             final int rand = new Random().nextInt(100);
             final Future<Integer> future = service.submit(new ScriptRunnable(script, null), rand);
-            Assert.assertEquals(Integer.valueOf(rand), future.get());
+            assertEquals(Integer.valueOf(rand), future.get());
         }
         final IAtomicLong count = instances[0].getAtomicLong("count");
-        Assert.assertEquals(k, count.get());
+        assertEquals(k, count.get());
     }
 
     @Test
@@ -188,8 +217,8 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             service.submitToKeyOwner(new ScriptRunnable(script, map), key, callback);
         }
         latch.await(10, TimeUnit.SECONDS);
-        Assert.assertEquals(0, instances[0].getAtomicLong("testSubmitToKeyOwnerRunnable").get());
-        Assert.assertEquals(k, count.get());
+        assertEquals(0, instances[0].getAtomicLong("testSubmitToKeyOwnerRunnable").get());
+        assertEquals(k, count.get());
     }
 
     @Test
@@ -220,8 +249,8 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             service.submitToMember(new ScriptRunnable(script, map), instance.getCluster().getLocalMember(), callback);
         }
         latch.await(10, TimeUnit.SECONDS);
-        Assert.assertEquals(0, instances[0].getAtomicLong("testSubmitToMemberRunnable").get());
-        Assert.assertEquals(k, count.get());
+        assertEquals(0, instances[0].getAtomicLong("testSubmitToMemberRunnable").get());
+        assertEquals(k, count.get());
     }
 
     @Test
@@ -256,8 +285,8 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
         assertTrue(latch.await(30, TimeUnit.SECONDS));
         final IAtomicLong result = instances[0].getAtomicLong("testSubmitToMembersRunnable");
-        Assert.assertEquals(sum, result.get());
-        Assert.assertEquals(sum, count.get());
+        assertEquals(sum, result.get());
+        assertEquals(sum, count.get());
     }
 
     @Test
@@ -284,8 +313,8 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
         }
         assertTrue(latch.await(30, TimeUnit.SECONDS));
         final IAtomicLong result = instances[0].getAtomicLong("testSubmitToAllMembersRunnable");
-        Assert.assertEquals(k * k, result.get());
-        Assert.assertEquals(k * k, count.get());
+        assertEquals(k * k, result.get());
+        assertEquals(k * k, count.get());
     }
 
     @Test
@@ -297,7 +326,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             final IExecutorService service = instances[i].getExecutorService("testSubmitMultipleNode");
             final String script = "hazelcast.getAtomicLong('testSubmitMultipleNode').incrementAndGet();";
             final Future future = service.submit(new ScriptCallable(script, null));
-            Assert.assertEquals((long) (i + 1), future.get());
+            assertEquals((long) (i + 1), future.get());
         }
     }
 
@@ -329,13 +358,13 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             while (!localMember.equals(instance.getPartitionService().getPartition(++key).getOwner())) ;
             if (i % 2 == 0) {
                 final Future f = service.submitToKeyOwner(new ScriptCallable(script, map), key);
-                Assert.assertTrue((Boolean) f.get(5, TimeUnit.SECONDS));
+                assertTrue((Boolean) f.get(5, TimeUnit.SECONDS));
             } else {
                 service.submitToKeyOwner(new ScriptCallable(script, map), key, callback);
             }
         }
         assertTrue(latch.await(30, TimeUnit.SECONDS));
-        Assert.assertEquals(k / 2, count.get());
+        assertEquals(k / 2, count.get());
     }
 
     @Test
@@ -363,13 +392,13 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             map.put("member", instance.getCluster().getLocalMember());
             if (i % 2 == 0) {
                 final Future f = service.submitToMember(new ScriptCallable(script, map), instance.getCluster().getLocalMember());
-                Assert.assertTrue((Boolean) f.get(5, TimeUnit.SECONDS));
+                assertTrue((Boolean) f.get(5, TimeUnit.SECONDS));
             } else {
                 service.submitToMember(new ScriptCallable(script, map), instance.getCluster().getLocalMember(), callback);
             }
         }
         assertTrue(latch.await(30, TimeUnit.SECONDS));
-        Assert.assertEquals(k / 2, count.get());
+        assertEquals(k / 2, count.get());
     }
 
     @Test
@@ -405,8 +434,8 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
         assertTrue(latch.await(30, TimeUnit.SECONDS));
         final IAtomicLong result = instances[0].getAtomicLong(name);
-        Assert.assertEquals(sum, result.get());
-        Assert.assertEquals(sum, count.get());
+        assertEquals(sum, result.get());
+        assertEquals(sum, count.get());
     }
 
     @Test
@@ -432,8 +461,8 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
         }
         countDownLatch.await(30, TimeUnit.SECONDS);
         final IAtomicLong result = instances[0].getAtomicLong("testSubmitToAllMembersCallable");
-        Assert.assertEquals(k * k, result.get());
-        Assert.assertEquals(k * k, count.get());
+        assertEquals(k * k, result.get());
+        assertEquals(k * k, count.get());
     }
 
     @Test
@@ -453,16 +482,14 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testCancellationAwareTask() {
-        CancellationAwareTask task = new CancellationAwareTask(5000);
+    public void testCancellationAwareTask() throws ExecutionException, InterruptedException {
+        SleepingTask task = new SleepingTask(5000);
         ExecutorService executor = createSingleNodeExecutorService("testCancellationAwareTask");
         Future future = executor.submit(task);
         try {
             future.get(2, TimeUnit.SECONDS);
             fail("Should throw TimeoutException!");
         } catch (TimeoutException expected) {
-        } catch (Exception e) {
-            fail("No other Exception!! -> " + e);
         }
         assertFalse(future.isDone());
         assertTrue(future.cancel(true));
@@ -480,7 +507,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testCancellationAwareTask2() {
-        Callable task1 = new CancellationAwareTask(5000);
+        Callable task1 = new SleepingTask(5000);
         ExecutorService executor = createSingleNodeExecutorService("testCancellationAwareTask", 1);
         executor.submit(task1);
 
@@ -620,14 +647,14 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
         assertFalse(executor.isShutdown());
         // Only one task
         ArrayList<Callable<Boolean>> tasks = new ArrayList<Callable<Boolean>>();
-        tasks.add(new CancellationAwareTask(0));
+        tasks.add(new SleepingTask(0));
         List<Future<Boolean>> futures = executor.invokeAll(tasks, 5, TimeUnit.SECONDS);
         assertEquals(futures.size(), 1);
         assertEquals(futures.get(0).get(), Boolean.TRUE);
         // More tasks
         tasks.clear();
         for (int i = 0; i < COUNT; i++) {
-            tasks.add(new CancellationAwareTask(i < 2 ? 0 : 20000));
+            tasks.add(new SleepingTask(i < 2 ? 0 : 20000));
         }
         futures = executor.invokeAll(tasks, 5, TimeUnit.SECONDS);
         assertEquals(futures.size(), COUNT);
@@ -734,7 +761,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
         }
         latch.await(2, TimeUnit.MINUTES);
 
-        final Future<Boolean> f = executorService.submit(new CancellationAwareTask(10000));
+        final Future<Boolean> f = executorService.submit(new SleepingTask(10000));
         Thread.sleep(1000);
         f.cancel(true);
         try {
@@ -743,16 +770,15 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
         }
 
         final LocalExecutorStats stats = executorService.getLocalExecutorStats();
-        Assert.assertEquals(k + 1, stats.getStartedTaskCount());
-        Assert.assertEquals(k, stats.getCompletedTaskCount());
-        Assert.assertEquals(0, stats.getPendingTaskCount());
-        Assert.assertEquals(1, stats.getCancelledTaskCount());
+        assertEquals(k + 1, stats.getStartedTaskCount());
+        assertEquals(k, stats.getCompletedTaskCount());
+        assertEquals(0, stats.getPendingTaskCount());
+        assertEquals(1, stats.getCancelledTaskCount());
     }
 
     @Test
     public void testPreregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -802,8 +828,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testMultiPreregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -868,8 +893,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testPostregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -923,8 +947,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testMultiPostregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -989,8 +1012,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testManagedPreregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -1034,8 +1056,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testManagedMultiPreregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy)createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -1094,8 +1115,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testManagedPostregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -1139,8 +1159,7 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
 
     @Test
     public void testManagedMultiPostregisteredExecutionCallbackCompletableFuture() throws Exception {
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) factory.newHazelcastInstance();
+        HazelcastInstanceProxy proxy = (HazelcastInstanceProxy) createHazelcastInstance();
         Field originalField = HazelcastInstanceProxy.class.getDeclaredField("original");
         originalField.setAccessible(true);
         HazelcastInstanceImpl hz = (HazelcastInstanceImpl) originalField.get(proxy);
@@ -1195,6 +1214,25 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
         latch2.await(30, TimeUnit.SECONDS);
         assertEquals("success", reference1.get());
         assertEquals("success", reference2.get());
+    }
+
+    @Test
+    public void testLongRunningCallable() throws ExecutionException, InterruptedException, TimeoutException {
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
+
+        Config config = new Config();
+        long callTimeout = 3000;
+        config.setProperty(GroupProperties.PROP_OPERATION_CALL_TIMEOUT_MILLIS, String.valueOf(callTimeout));
+
+        HazelcastInstance hz1 = factory.newHazelcastInstance(config);
+        HazelcastInstance hz2 = factory.newHazelcastInstance(config);
+
+        IExecutorService executor = hz1.getExecutorService("test");
+        Future<Boolean> f = executor
+                .submitToMember(new SleepingTask(callTimeout * 3), hz2.getCluster().getLocalMember());
+
+        Boolean result = f.get(1, TimeUnit.MINUTES);
+        assertTrue(result);
     }
 
     private static class ScriptRunnable implements Runnable, Serializable, HazelcastInstanceAware {
@@ -1292,11 +1330,11 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
         }
     }
 
-    public static class CancellationAwareTask implements Callable<Boolean>, Serializable {
+    public static class SleepingTask implements Callable<Boolean>, Serializable {
 
         long sleepTime = 10000;
 
-        public CancellationAwareTask(long sleepTime) {
+        public SleepingTask(long sleepTime) {
             this.sleepTime = sleepTime;
         }
 
@@ -1334,6 +1372,5 @@ public class ExecutorServiceTest extends HazelcastTestSupport {
             localMember = hazelcastInstance.getCluster().getLocalMember();
         }
     }
-
 }
 

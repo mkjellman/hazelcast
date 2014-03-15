@@ -26,20 +26,16 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.hibernate.entity.DummyEntity;
 import com.hazelcast.hibernate.instance.HazelcastAccessor;
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.test.annotation.NightlyTest;
 import com.hazelcast.test.annotation.SlowTest;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Environment;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.util.Date;
 import java.util.Properties;
 
@@ -62,7 +58,7 @@ public class CustomPropertiesTest extends HibernateTestSupport {
         assertEquals(50, cfg.getMaxSizeConfig().getSize());
         sf.close();
         assertTrue(hz.getLifecycleService().isRunning());
-        hz.getLifecycleService().shutdown();
+        hz.shutdown();
     }
 
     @Test
@@ -83,11 +79,11 @@ public class CustomPropertiesTest extends HibernateTestSupport {
         ClientConfig clientConfig = client.getClientConfig();
         assertEquals("dev-custom", clientConfig.getGroupConfig().getName());
         assertEquals("dev-pass", clientConfig.getGroupConfig().getPassword());
-        assertTrue(clientConfig.isSmartRouting());
-        assertTrue(clientConfig.isRedoOperation());
+        assertTrue(clientConfig.getNetworkConfig().isSmartRouting());
+        assertTrue(clientConfig.getNetworkConfig().isRedoOperation());
         Hazelcast.newHazelcastInstance(new ClasspathXmlConfig("hazelcast-custom.xml"));
         assertEquals(2, hz.getCluster().getMembers().size());
-        main.getLifecycleService().shutdown();
+        main.shutdown();
         Thread.sleep(1000 * 3); // let client to reconnect
         assertEquals(1, hz.getCluster().getMembers().size());
 
@@ -114,7 +110,7 @@ public class CustomPropertiesTest extends HibernateTestSupport {
         assertTrue(hz == HazelcastAccessor.getHazelcastInstance(sf));
         sf.close();
         assertTrue(hz.getLifecycleService().isRunning());
-        hz.getLifecycleService().shutdown();
+        hz.shutdown();
     }
 
     private Properties getDefaultProperties() {

@@ -16,9 +16,8 @@
 
 package com.hazelcast.concurrent.atomiclong.client;
 
-import com.hazelcast.concurrent.atomiclong.ApplyOperation;
-import com.hazelcast.concurrent.atomiclong.AtomicLongPortableHook;
-import com.hazelcast.core.Function;
+import com.hazelcast.concurrent.atomiclong.operations.ApplyOperation;
+import com.hazelcast.core.IFunction;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -47,7 +46,7 @@ public class ApplyRequest extends ReadRequest {
     @Override
     protected Operation prepareOperation() {
         SerializationService serializationService = getClientEngine().getSerializationService();
-        Function f = serializationService.toObject(function);
+        IFunction f = serializationService.toObject(function);
         //noinspection unchecked
         return new ApplyOperation(name, f);
     }

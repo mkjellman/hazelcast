@@ -27,9 +27,13 @@ import com.hazelcast.nio.serialization.PortableReader;
 import com.hazelcast.nio.serialization.PortableWriter;
 
 import java.io.IOException;
+import java.security.Permission;
 
-public class ClientJobProcessInformationRequest
-        extends InvocationClientRequest {
+/**
+ * This class is used to retrieve current processed records and other statistics from
+ * emitting client to the job owning node.
+ */
+public class ClientJobProcessInformationRequest extends InvocationClientRequest {
 
     private String name;
     private String jobId;
@@ -57,21 +61,23 @@ public class ClientJobProcessInformationRequest
         JobProcessInformation processInformation = null;
         if (supervisor != null && supervisor.getJobProcessInformation() != null) {
             JobProcessInformation current = supervisor.getJobProcessInformation();
-            processInformation = new TransferableJobProcessInformation(
-                    current.getPartitionStates(), current.getProcessedRecords());
+            processInformation = new TransferableJobProcessInformation(current.getPartitionStates(),
+                    current.getProcessedRecords());
         }
         endpoint.sendResponse(processInformation, getCallId());
     }
 
     @Override
-    public void write(PortableWriter writer) throws IOException {
+    public void write(PortableWriter writer)
+            throws IOException {
         super.write(writer);
         writer.writeUTF("name", name);
         writer.writeUTF("jobId", jobId);
     }
 
     @Override
-    public void read(PortableReader reader) throws IOException {
+    public void read(PortableReader reader)
+            throws IOException {
         super.read(reader);
         name = reader.readUTF("name");
         jobId = reader.readUTF("jobId");
@@ -87,4 +93,8 @@ public class ClientJobProcessInformationRequest
         return MapReducePortableHook.CLIENT_JOB_PROCESS_INFO_REQUEST;
     }
 
+    @Override
+    public Permission getRequiredPermission() {
+        return null;
+    }
 }

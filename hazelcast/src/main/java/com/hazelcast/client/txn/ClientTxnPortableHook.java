@@ -16,21 +16,26 @@
 
 package com.hazelcast.client.txn;
 
-import com.hazelcast.nio.serialization.*;
+import com.hazelcast.nio.serialization.ClassDefinition;
+import com.hazelcast.nio.serialization.FactoryIdHelper;
+import com.hazelcast.nio.serialization.Portable;
+import com.hazelcast.nio.serialization.PortableFactory;
+import com.hazelcast.nio.serialization.PortableHook;
 
 import java.util.Collection;
 
-/**
- * @author ali 6/6/13
- */
-public class ClientTxnPortableHook implements PortableHook{
+public class ClientTxnPortableHook implements PortableHook {
 
     public static final int F_ID = FactoryIdHelper.getFactoryId(FactoryIdHelper.CLIENT_TXN_PORTABLE_FACTORY, -19);
 
     public static final int CREATE = 1;
     public static final int COMMIT = 2;
     public static final int ROLLBACK = 3;
+    public static final int PREPARE = 4;
+    public static final int RECOVER_ALL = 5;
+    public static final int RECOVER = 6;
 
+    @Override
     public int getFactoryId() {
         return F_ID;
     }
@@ -38,20 +43,28 @@ public class ClientTxnPortableHook implements PortableHook{
     public PortableFactory createFactory() {
         final PortableFactory factory = new PortableFactory() {
             public Portable create(int classId) {
-                switch (classId){
+                switch (classId) {
                     case CREATE:
                         return new CreateTransactionRequest();
                     case COMMIT:
                         return new CommitTransactionRequest();
                     case ROLLBACK:
                         return new RollbackTransactionRequest();
+                    case PREPARE:
+                        return new PrepareTransactionRequest();
+                    case RECOVER_ALL:
+                        return new RecoverAllTransactionsRequest();
+                    case RECOVER:
+                        return new RecoverTransactionRequest();
+                    default:
+                        return null;
                 }
-                return null;
             }
         };
         return factory;
     }
 
+    @Override
     public Collection<ClassDefinition> getBuiltinDefinitions() {
         return null;
     }

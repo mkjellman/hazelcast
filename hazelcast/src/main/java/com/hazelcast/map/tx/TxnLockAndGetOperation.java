@@ -28,20 +28,21 @@ import java.io.IOException;
 
 public class TxnLockAndGetOperation extends LockAwareOperation {
 
-    private long timeout;
     private VersionedValue response;
+    private String ownerUuid;
 
     public TxnLockAndGetOperation() {
     }
 
-    public TxnLockAndGetOperation(String name, Data dataKey, long timeout, long ttl) {
+    public TxnLockAndGetOperation(String name, Data dataKey, long timeout, long ttl, String ownerUuid) {
         super(name, dataKey, ttl);
-        this.timeout = timeout;
+        this.ownerUuid = ownerUuid;
+        setWaitTimeout(timeout);
     }
 
     @Override
     public void run() throws Exception {
-        if (!recordStore.txnLock(getKey(), getCallerUuid(), getThreadId(), ttl)) {
+        if (!recordStore.txnLock(getKey(), ownerUuid, getThreadId(), ttl)) {
             throw new TransactionException("Transaction couldn't obtain lock.");
         }
         Record record = recordStore.getRecord(dataKey);
@@ -49,9 +50,8 @@ public class TxnLockAndGetOperation extends LockAwareOperation {
         response = new VersionedValue(value, record == null ? 0 : record.getVersion());
     }
 
-    @Override
-    public long getWaitTimeoutMillis() {
-        return timeout;
+    public boolean shouldWait() {
+        return !recordStore.canAcquireLock(dataKey, ownerUuid, getThreadId());
     }
 
     @Override
@@ -68,20 +68,20 @@ public class TxnLockAndGetOperation extends LockAwareOperation {
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
-        out.writeLong(timeout);
+        out.writeUTF(ownerUuid);
     }
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
-        timeout = in.readLong();
+        ownerUuid = in.readUTF();
     }
 
 
     @Override
     public String toString() {
         return "TxnLockAndGetOperation{" +
-                "timeout=" + timeout +
+                "timeout=" + getWaitTimeout() +
                 ", thread=" + getThreadId() +
                 '}';
     }

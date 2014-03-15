@@ -39,19 +39,21 @@ import java.security.Permission;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * User: sancar
  * Date: 9/18/13
  * Time: 2:28 PM
  */
-public abstract class AbstractTxnMapRequest extends BaseTransactionRequest implements SecureRequest {
+public abstract class AbstractTxnMapRequest extends BaseTransactionRequest {
 
     String name;
     TxnMapRequestType requestType;
     Data key;
     Data value;
     Data newValue;
+    long ttl = -1;
 
     public AbstractTxnMapRequest() {
     }
@@ -76,6 +78,11 @@ public abstract class AbstractTxnMapRequest extends BaseTransactionRequest imple
         this.newValue = newValue;
     }
 
+    public AbstractTxnMapRequest(String name, TxnMapRequestType requestType, Data key, Data value, long ttl, TimeUnit timeUnit) {
+        this(name, requestType, key, value);
+        this.ttl = timeUnit == null ? ttl : timeUnit.toMillis(ttl);
+    }
+
 
     public Object innerCall() throws Exception {
         final TransactionContext context = getEndpoint().getTransactionContext(txnId);
@@ -91,6 +98,8 @@ public abstract class AbstractTxnMapRequest extends BaseTransactionRequest imple
                 return map.size();
             case PUT:
                 return map.put(key, value);
+            case PUT_WITH_TTL:
+                return map.put(key, value, ttl, TimeUnit.MILLISECONDS);
             case PUT_IF_ABSENT:
                 return map.putIfAbsent(key, value);
             case REPLACE:
@@ -155,6 +164,7 @@ public abstract class AbstractTxnMapRequest extends BaseTransactionRequest imple
         IOUtil.writeNullableData(out, value);
         IOUtil.writeNullableData(out, newValue);
         writeDataInner(out);
+        out.writeLong(ttl);
     }
 
     public void read(PortableReader reader) throws IOException {
@@ -166,6 +176,7 @@ public abstract class AbstractTxnMapRequest extends BaseTransactionRequest imple
         value = IOUtil.readNullableData(in);
         newValue = IOUtil.readNullableData(in);
         readDataInner(in);
+        ttl = in.readLong();
     }
 
     protected abstract Predicate getPredicate();
@@ -190,7 +201,8 @@ public abstract class AbstractTxnMapRequest extends BaseTransactionRequest imple
         KEYSET_BY_PREDICATE(13),
         VALUES(14),
         VALUES_BY_PREDICATE(15),
-        GET_FOR_UPDATE(16);
+        GET_FOR_UPDATE(16),
+        PUT_WITH_TTL(17);
         int type;
 
         TxnMapRequestType(int i) {
@@ -208,20 +220,40 @@ public abstract class AbstractTxnMapRequest extends BaseTransactionRequest imple
     }
 
     public Permission getRequiredPermission() {
-        String action = ActionConstants.ACTION_READ;
+        String action;
+        boolean isLock = true;
         switch (requestType) {
+            case CONTAINS_KEY:
+            case GET:
+            case SIZE:
+            case KEYSET:
+            case KEYSET_BY_PREDICATE:
+            case VALUES:
+            case VALUES_BY_PREDICATE:
+                action = ActionConstants.ACTION_READ;
+                isLock = false;
+                break;
+            case GET_FOR_UPDATE:
+                action = ActionConstants.ACTION_READ;
+                break;
             case PUT:
             case PUT_IF_ABSENT:
             case REPLACE:
             case REPLACE_IF_SAME:
             case SET:
-                action =  ActionConstants.ACTION_PUT;
+            case PUT_WITH_TTL:
+                action = ActionConstants.ACTION_PUT;
                 break;
             case REMOVE:
             case DELETE:
             case REMOVE_IF_SAME:
-                action =  ActionConstants.ACTION_REMOVE;
+                action = ActionConstants.ACTION_REMOVE;
                 break;
+            default:
+                throw new IllegalArgumentException("Invalid request type: " + requestType);
+        }
+        if (isLock) {
+            return new MapPermission(name, action, ActionConstants.ACTION_LOCK);
         }
         return new MapPermission(name, action);
     }

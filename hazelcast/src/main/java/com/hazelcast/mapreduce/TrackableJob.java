@@ -28,12 +28,12 @@ import com.hazelcast.spi.annotation.Beta;
  * JobTracker tracker = hazelcastInstance.getJobTracker(...);
  * Job job = tracker.newJob(...);
  * // ...
- * String jobId = job.getJobId();
+ * JobCompletableFuture future = job.submit();
+ * String jobId = future.getJobId();
  * TrackableJob trackableJob = tracker.getTrackableJob(jobId);
  * </pre>
  *
  * @param <V> type of the returning value
- *
  * @since 3.2
  */
 @Beta

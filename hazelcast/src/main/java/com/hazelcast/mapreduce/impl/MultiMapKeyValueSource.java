@@ -22,11 +22,13 @@ import com.hazelcast.multimap.MultiMapContainer;
 import com.hazelcast.multimap.MultiMapRecord;
 import com.hazelcast.multimap.MultiMapService;
 import com.hazelcast.multimap.MultiMapWrapper;
+import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.nio.serialization.SerializationService;
+import com.hazelcast.partition.InternalPartitionService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 
@@ -34,11 +36,17 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
 
+/**
+ * This {@link com.hazelcast.mapreduce.KeyValueSource} implementation is used in
+ * {@link com.hazelcast.mapreduce.KeyValueSource#fromMultiMap(com.hazelcast.core.MultiMap)} to generate a default
+ * implementation based on a Hazelcast {@link com.hazelcast.core.MultiMap}.
+ *
+ * @param <K> type of the key of the MultiMap
+ * @param <V> type of the value of the MultiMap
+ */
 public class MultiMapKeyValueSource<K, V>
         extends KeyValueSource<K, V>
         implements IdentifiedDataSerializable, PartitionIdAware {
-
-    private final static long serialVersionUID = 1;
 
     // This prevents excessive creation of map entries for a serialized operation
     private final MapReduceSimpleEntry<K, V> simpleEntry = new MapReduceSimpleEntry<K, V>();
@@ -65,8 +73,13 @@ public class MultiMapKeyValueSource<K, V>
     @Override
     public boolean open(NodeEngine nodeEngine) {
         NodeEngineImpl nei = (NodeEngineImpl) nodeEngine;
+        InternalPartitionService ps = nei.getPartitionService();
         MultiMapService multiMapService = nei.getService(MultiMapService.SERVICE_NAME);
         ss = nei.getSerializationService();
+        Address partitionOwner = ps.getPartitionOwner(partitionId);
+        if (partitionOwner == null) {
+            return false;
+        }
         multiMapContainer = multiMapService.getOrCreateCollectionContainer(partitionId, multiMapName);
         isBinary = multiMapContainer.getConfig().isBinary();
         keyIterator = multiMapContainer.keySet().iterator();
@@ -74,7 +87,8 @@ public class MultiMapKeyValueSource<K, V>
     }
 
     @Override
-    public void close() throws IOException {
+    public void close()
+            throws IOException {
     }
 
     @Override
@@ -91,7 +105,7 @@ public class MultiMapKeyValueSource<K, V>
             Data dataKey = keyIterator.next();
             key = (K) ss.toObject(dataKey);
             MultiMapWrapper wrapper = multiMapContainer.getMultiMapWrapper(dataKey);
-            valueIterator = wrapper.getCollection().iterator();
+            valueIterator = wrapper.getCollection(true).iterator();
             return hasNext();
         }
 
@@ -132,12 +146,14 @@ public class MultiMapKeyValueSource<K, V>
     }
 
     @Override
-    public void writeData(ObjectDataOutput out) throws IOException {
+    public void writeData(ObjectDataOutput out)
+            throws IOException {
         out.writeUTF(multiMapName);
     }
 
     @Override
-    public void readData(ObjectDataInput in) throws IOException {
+    public void readData(ObjectDataInput in)
+            throws IOException {
         multiMapName = in.readUTF();
     }
 

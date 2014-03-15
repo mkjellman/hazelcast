@@ -42,6 +42,7 @@ import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 
+import static com.hazelcast.config.MapStoreConfig.InitialLoadMode;
 import static com.hazelcast.util.StringUtil.upperCaseInternal;
 
 /**
@@ -197,9 +198,9 @@ public class XmlConfigBuilder extends AbstractXmlConfigHelper implements ConfigB
             }
             String msg = "Having problem parsing the " + msgPart;
             msg += "\nException: " + e.getMessage();
-            msg += "\nHazelcast will start with default configuration.";
-            logger.warning(msg);
-            return;
+            msg += "\nHazelcast startup interrupted.";
+            logger.severe(msg);
+            throw e;
         } finally {
             IOUtil.closeResource(in);
         }
@@ -284,8 +285,6 @@ public class XmlConfigBuilder extends AbstractXmlConfigHelper implements ConfigB
                 handleMap(node);
             } else if ("multimap".equals(nodeName)) {
                 handleMultiMap(node);
-            } else if ("replicatedmap".equals(nodeName)) {
-                handleReplicatedMap(node);
             } else if ("list".equals(nodeName)) {
                 handleList(node);
             } else if ("set".equals(nodeName)) {
@@ -795,39 +794,6 @@ public class XmlConfigBuilder extends AbstractXmlConfigHelper implements ConfigB
         this.config.addMultiMapConfig(multiMapConfig);
     }
 
-    private void handleReplicatedMap(final org.w3c.dom.Node node) {
-        final Node attName = node.getAttributes().getNamedItem("name");
-        final String name = getTextContent(attName);
-        final ReplicatedMapConfig replicatedMapConfig = new ReplicatedMapConfig();
-        replicatedMapConfig.setName(name);
-        for (org.w3c.dom.Node n : new IterableNodeList(node.getChildNodes())) {
-            final String nodeName = cleanNodeName(n.getNodeName());
-            final String value = getTextContent(n).trim();
-            if ("concurrency-level".equals(nodeName)) {
-                replicatedMapConfig.setConcurrencyLevel(getIntegerValue("concurrency-level", value, ReplicatedMapConfig.DEFAULT_CONCURRENCY_LEVEL));
-            } else if ("in-memory-format".equals(nodeName)) {
-                replicatedMapConfig.setInMemoryFormat(InMemoryFormat.valueOf(upperCaseInternal(value)));
-            } else if ("replication-delay-millis".equals(nodeName)) {
-                replicatedMapConfig.setReplicationDelayMillis(getIntegerValue("replication-delay-millis", value, ReplicatedMapConfig.DEFAULT_REPLICATION_DELAY_MILLIS));
-            } else if ("async-fillup".equals(nodeName)) {
-                replicatedMapConfig.setAsyncFillup(checkTrue(value));
-            } else if ("statistics-enabled".equals(nodeName)) {
-                replicatedMapConfig.setStatisticsEnabled(checkTrue(value));
-            } else if ("entry-listeners".equals(nodeName)) {
-                for (org.w3c.dom.Node listenerNode : new IterableNodeList(n.getChildNodes())) {
-                    if ("entry-listener".equals(cleanNodeName(listenerNode))) {
-                        final NamedNodeMap attrs = listenerNode.getAttributes();
-                        boolean incValue = checkTrue(getTextContent(attrs.getNamedItem("include-value")));
-                        boolean local = checkTrue(getTextContent(attrs.getNamedItem("local")));
-                        String listenerClass = getTextContent(listenerNode);
-                        replicatedMapConfig.addEntryListenerConfig(new EntryListenerConfig(listenerClass, local, incValue));
-                    }
-                }
-            }
-        }
-        this.config.addReplicatedMapConfig(replicatedMapConfig);
-    }
-
     private void handleMap(final org.w3c.dom.Node node) throws Exception {
         final String name = getAttribute(node, "name");
         final MapConfig mapConfig = new MapConfig();
@@ -849,7 +815,7 @@ public class XmlConfigBuilder extends AbstractXmlConfigHelper implements ConfigB
                 if (maxSizePolicy != null) {
                     msc.setMaxSizePolicy(MaxSizeConfig.MaxSizePolicy.valueOf(upperCaseInternal(getTextContent(maxSizePolicy))));
                 }
-                int size ;
+                int size;
                 if (value.length() < 2) {
                     size = Integer.parseInt(value);
                 } else {
@@ -933,8 +899,11 @@ public class XmlConfigBuilder extends AbstractXmlConfigHelper implements ConfigB
         for (int a = 0; a < atts.getLength(); a++) {
             final org.w3c.dom.Node att = atts.item(a);
             final String value = getTextContent(att).trim();
-            if (att.getNodeName().equals("enabled")) {
+            if ("enabled".equals(att.getNodeName())) {
                 mapStoreConfig.setEnabled(checkTrue(value));
+            } else if ("initial-mode".equals(att.getNodeName())) {
+                final InitialLoadMode mode = InitialLoadMode.valueOf(upperCaseInternal(getTextContent(att)));
+                mapStoreConfig.setInitialLoadMode(mode);
             }
         }
         for (org.w3c.dom.Node n : new IterableNodeList(node.getChildNodes())) {
@@ -1125,16 +1094,16 @@ public class XmlConfigBuilder extends AbstractXmlConfigHelper implements ConfigB
                 getTextContent(intervalNode), 5) : 5;
 
         final Node securityTokenNode = attrs.getNamedItem("security-token");
-        final String securityToken =getTextContent(securityTokenNode);
+        final String securityToken = getTextContent(securityTokenNode);
 
-        if (securityToken != null && enabledNode == null) {
+        if ((securityToken != null && !"".equals(securityToken)) && enabledNode == null) {
             enabled = true;
         }
 
         final Node clusterIdNode = attrs.getNamedItem("cluster-id");
-        final String clusterId =getTextContent(clusterIdNode);
+        final String clusterId = getTextContent(clusterIdNode);
 
-        final String url =getTextContent(node);
+        final String url = getTextContent(node);
 
         ManagementCenterConfig managementCenterConfig = config.getManagementCenterConfig();
         managementCenterConfig.setEnabled(enabled);

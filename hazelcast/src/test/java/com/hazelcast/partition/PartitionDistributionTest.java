@@ -25,11 +25,10 @@ import com.hazelcast.instance.GroupProperties;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.test.annotation.NightlyTest;
 import com.hazelcast.test.annotation.SlowTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -41,10 +40,6 @@ import java.util.concurrent.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-
-/**
- * @author mdogan 5/20/13
- */
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(SlowTest.class)
@@ -102,13 +97,9 @@ public class PartitionDistributionTest extends HazelcastTestSupport {
                 final int instanceIndex = j;
                 new Thread(new Runnable() {
                     public void run() {
-                        final HazelcastInstance h = instances[instanceIndex];
-                        try {
-                            warmUpPartitions(h);
-                            counts.offer(getLocalPartitionsCount(h));
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
+                        HazelcastInstance h = instances[instanceIndex];
+                        warmUpPartitions(h);
+                        counts.offer(getLocalPartitionsCount(h));
                     }
                 }).start();
             }

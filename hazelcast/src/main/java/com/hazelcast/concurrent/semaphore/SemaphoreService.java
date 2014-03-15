@@ -16,11 +16,13 @@
 
 package com.hazelcast.concurrent.semaphore;
 
+import com.hazelcast.concurrent.semaphore.operations.SemaphoreDeadMemberOperation;
+import com.hazelcast.concurrent.semaphore.operations.SemaphoreReplicationOperation;
 import com.hazelcast.config.SemaphoreConfig;
 import com.hazelcast.nio.Address;
 import com.hazelcast.partition.InternalPartition;
 import com.hazelcast.partition.MigrationEndpoint;
-import com.hazelcast.partition.PartitionService;
+import com.hazelcast.partition.InternalPartitionService;
 import com.hazelcast.spi.ClientAwareService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.MemberAttributeServiceEvent;
@@ -33,7 +35,6 @@ import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
 import com.hazelcast.spi.RemoteService;
-import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 
 import java.util.HashMap;
@@ -45,6 +46,7 @@ import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.partition.strategy.StringPartitioningStrategy.getPartitionKey;
 import static com.hazelcast.spi.impl.ResponseHandlerFactory.createEmptyResponseHandler;
+import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
 
 public class SemaphoreService implements ManagedService, MigrationAwareService, MembershipAwareService,
         RemoteService, ClientAwareService {
@@ -52,23 +54,23 @@ public class SemaphoreService implements ManagedService, MigrationAwareService, 
     public static final String SERVICE_NAME = "hz:impl:semaphoreService";
 
     private final ConcurrentMap<String, Permit> permitMap = new ConcurrentHashMap<String, Permit>();
+
+    private final ConstructorFunction<String, Permit> permitConstructor = new ConstructorFunction<String, Permit>() {
+        public Permit createNew(String name) {
+            SemaphoreConfig config = nodeEngine.getConfig().findSemaphoreConfig(name);
+            InternalPartitionService partitionService = nodeEngine.getPartitionService();
+            int partitionId = partitionService.getPartitionId(getPartitionKey(name));
+            return new Permit(partitionId, new SemaphoreConfig(config));
+        }
+    };
     private final NodeEngine nodeEngine;
 
     public SemaphoreService(NodeEngine nodeEngine) {
         this.nodeEngine = nodeEngine;
     }
 
-    private final ConstructorFunction<String, Permit> permitConstructor = new ConstructorFunction<String, Permit>() {
-        public Permit createNew(String name) {
-            SemaphoreConfig config = nodeEngine.getConfig().findSemaphoreConfig(name);
-            PartitionService partitionService = nodeEngine.getPartitionService();
-            int partitionId = partitionService.getPartitionId(getPartitionKey(name));
-            return new Permit(partitionId, new SemaphoreConfig(config));
-        }
-    };
-
     public Permit getOrCreatePermit(String name) {
-        return ConcurrencyUtil.getOrPutIfAbsent(permitMap, name, permitConstructor);
+        return getOrPutIfAbsent(permitMap, name, permitConstructor);
     }
 
     // need for testing..
@@ -105,7 +107,7 @@ public class SemaphoreService implements ManagedService, MigrationAwareService, 
     }
 
     private void onOwnerDisconnected(final String caller) {
-        PartitionService partitionService = nodeEngine.getPartitionService();
+        InternalPartitionService partitionService = nodeEngine.getPartitionService();
         OperationService operationService = nodeEngine.getOperationService();
         Address thisAddress = nodeEngine.getThisAddress();
 

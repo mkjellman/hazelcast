@@ -16,27 +16,62 @@
 
 package com.hazelcast.cluster;
 
-import com.hazelcast.core.*;
+import com.hazelcast.core.Cluster;
+import com.hazelcast.core.HazelcastException;
+import com.hazelcast.core.HazelcastInstanceNotActiveException;
+import com.hazelcast.core.InitialMembershipEvent;
+import com.hazelcast.core.InitialMembershipListener;
+import com.hazelcast.core.Member;
+import com.hazelcast.core.MemberAttributeEvent;
+import com.hazelcast.core.MembershipEvent;
+import com.hazelcast.core.MembershipListener;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.instance.LifecycleServiceImpl;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.map.operation.MapOperationType;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ConnectionListener;
 import com.hazelcast.nio.Packet;
 import com.hazelcast.security.Credentials;
-import com.hazelcast.spi.*;
+import com.hazelcast.spi.EventPublishingService;
+import com.hazelcast.spi.EventRegistration;
+import com.hazelcast.spi.EventService;
+import com.hazelcast.spi.ExecutionService;
+import com.hazelcast.spi.ManagedService;
+import com.hazelcast.spi.MemberAttributeServiceEvent;
+import com.hazelcast.spi.MembershipAwareService;
+import com.hazelcast.spi.MembershipServiceEvent;
+import com.hazelcast.spi.NodeEngine;
+import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.SplitBrainHandlerService;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.util.Clock;
+import com.hazelcast.util.ValidationUtil;
+import com.hazelcast.util.executor.ExecutorType;
 
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 import java.net.ConnectException;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
@@ -80,7 +115,8 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
 
     private final Set<MemberInfo> setJoins = new LinkedHashSet<MemberInfo>(100);
 
-    private final AtomicReference<Map<Address, MemberImpl>> membersMapRef = new AtomicReference<Map<Address, MemberImpl>>(Collections.EMPTY_MAP);
+    private final AtomicReference<Map<Address, MemberImpl>> membersMapRef
+            = new AtomicReference<Map<Address, MemberImpl>>(Collections.EMPTY_MAP);
 
     private final AtomicReference<Set<MemberImpl>> membersRef = new AtomicReference<Set<MemberImpl>>(Collections.EMPTY_SET);
 
@@ -119,17 +155,17 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
         mergeFirstRunDelay = mergeFirstRunDelay <= 0 ? 100 : mergeFirstRunDelay; // milliseconds
 
         ExecutionService executionService = nodeEngine.getExecutionService();
-        String executor = "hz:cluster";
-        executionService.register(executor, 8, 100000);
+        String executorName = "hz:cluster";
+        executionService.register(executorName, 2, 1000, ExecutorType.CACHED);
 
         long mergeNextRunDelay = node.getGroupProperties().MERGE_NEXT_RUN_DELAY_SECONDS.getLong() * 1000;
         mergeNextRunDelay = mergeNextRunDelay <= 0 ? 100 : mergeNextRunDelay; // milliseconds
-        executionService.scheduleWithFixedDelay(executor, new SplitBrainHandler(node),
+        executionService.scheduleWithFixedDelay(executorName, new SplitBrainHandler(node),
                                                 mergeFirstRunDelay, mergeNextRunDelay, TimeUnit.MILLISECONDS);
 
         long heartbeatInterval = node.groupProperties.HEARTBEAT_INTERVAL_SECONDS.getInteger();
         heartbeatInterval = heartbeatInterval <= 0 ? 1 : heartbeatInterval;
-        executionService.scheduleWithFixedDelay(executor, new Runnable() {
+        executionService.scheduleWithFixedDelay(executorName, new Runnable() {
             public void run() {
                 heartBeater();
             }
@@ -137,7 +173,7 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
 
         long masterConfirmationInterval = node.groupProperties.MASTER_CONFIRMATION_INTERVAL_SECONDS.getInteger();
         masterConfirmationInterval = masterConfirmationInterval <= 0 ? 1 : masterConfirmationInterval;
-        executionService.scheduleWithFixedDelay(executor, new Runnable() {
+        executionService.scheduleWithFixedDelay(executorName, new Runnable() {
             public void run() {
                 sendMasterConfirmation();
             }
@@ -145,7 +181,7 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
 
         long memberListPublishInterval = node.groupProperties.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getInteger();
         memberListPublishInterval = memberListPublishInterval <= 0 ? 1 : memberListPublishInterval;
-        executionService.scheduleWithFixedDelay(executor, new Runnable() {
+        executionService.scheduleWithFixedDelay(executorName, new Runnable() {
             public void run() {
                 sendMemberListToOthers();
             }
@@ -613,9 +649,10 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
                         Future f = nodeEngine.getExecutionService().submit("hz:system", task);
                         futures.add(f);
                     }
+                    long callTimeout = node.groupProperties.OPERATION_CALL_TIMEOUT_MILLIS.getLong();
                     for (Future f : futures) {
                         try {
-                            f.get();
+                            waitOnFutureInterruptible(f, callTimeout, TimeUnit.MILLISECONDS);
                         } catch (Exception e) {
                             logger.severe("While merging...", e);
                         }
@@ -623,6 +660,28 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
                     lifecycleService.fireLifecycleEvent(MERGED);
                 }
             });
+        }
+    }
+
+    private <V> V waitOnFutureInterruptible(Future<V> future, long timeout, TimeUnit timeUnit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        ValidationUtil.isNotNull(timeUnit, "timeUnit");
+        long deadline = Clock.currentTimeMillis() + timeUnit.toMillis(timeout);
+        while (true) {
+            long localTimeout = Math.min(1000 * 10, deadline);
+            try {
+                return future.get(localTimeout, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException te) {
+                deadline -= localTimeout;
+                if (deadline <= 0) {
+                    throw te;
+                }
+                if (!node.isActive()) {
+                    future.cancel(true);
+                    throw new HazelcastInstanceNotActiveException();
+                }
+            }
         }
     }
 
@@ -755,7 +814,7 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
         }
     }
 
-    public void updateMemberAttribute(String uuid, MapOperationType operationType, String key, Object value) {
+    public void updateMemberAttribute(String uuid, MemberAttributeOperationType operationType, String key, Object value) {
         lock.lock();
         try {
             Map<Address, MemberImpl> memberMap = membersMapRef.get();
@@ -916,7 +975,7 @@ public final class ClusterServiceImpl implements ClusterService, ConnectionListe
         }
     }
 
-    private void sendMemberAttributeEvent(MemberImpl member, MapOperationType operationType, String key, Object value) {
+    private void sendMemberAttributeEvent(MemberImpl member, MemberAttributeOperationType operationType, String key, Object value) {
         final MemberAttributeEvent memberAttributeEvent = new MemberAttributeEvent(getClusterProxy(), member, operationType, key, value);
         final Collection<MembershipAwareService> membershipAwareServices = nodeEngine.getServices(MembershipAwareService.class);
         final MemberAttributeServiceEvent event = new MemberAttributeServiceEvent(getClusterProxy(), member, operationType, key, value);

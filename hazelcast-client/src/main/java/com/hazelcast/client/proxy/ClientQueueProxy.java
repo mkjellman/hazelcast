@@ -37,8 +37,8 @@ public final class ClientQueueProxy<E> extends ClientProxy implements IQueue<E>{
 
     private final String name;
 
-    public ClientQueueProxy(String serviceName, String name) {
-        super(serviceName, name);
+    public ClientQueueProxy(String instanceName, String serviceName, String name) {
+        super(instanceName, serviceName, name);
         this.name = name;
     }
 
@@ -75,6 +75,16 @@ public final class ClientQueueProxy<E> extends ClientProxy implements IQueue<E>{
         throw new IllegalStateException("Queue is full!");
     }
 
+    /**
+     * It is advised to use this method in a try-catch block to take the offer operation
+     * full lifecycle control, in a "lost node" scenario you can not be sure
+     * offer is succeeded or not so you may want to retry.
+     *
+     * @param e the element to add
+     * @return <tt>true</tt> if the element was added to this queue.
+     *         <tt>false</tt> if there is not enough capacity to insert the element.
+     * @throws HazelcastException if client loses the connected node.
+     */
     public boolean offer(E e) {
         try {
             return offer(e, 0, TimeUnit.SECONDS);
@@ -255,5 +265,10 @@ public final class ClientQueueProxy<E> extends ClientProxy implements IQueue<E>{
             dataList.add(getContext().getSerializationService().toData(o));
         }
         return dataList;
+    }
+
+    @Override
+    public String toString() {
+        return "IQueue{" + "name='" + getName() + '\'' + '}';
     }
 }

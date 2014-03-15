@@ -23,32 +23,29 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.io.IOException;
 
-/**
- * @author ali 20/12/13
- */
 public class ClientResponse implements IdentifiedDataSerializable {
 
-    Object response;
-
-    int callId;
-
-    boolean event;
+    private Data response;
+    private int callId;
+    private boolean isEvent;
+    private boolean isError;
 
     public ClientResponse() {
     }
 
-    public ClientResponse(Object response, int callId) {
+    public ClientResponse(Data response, boolean isError, int callId) {
         this.response = response;
+        this.isError = isError;
         this.callId = callId;
     }
 
-    public ClientResponse(Object response, int callId, boolean event) {
+    public ClientResponse(Data response, int callId, boolean isEvent) {
         this.response = response;
         this.callId = callId;
-        this.event = event;
+        this.isEvent = isEvent;
     }
 
-    public Object getResponse() {
+    public Data getResponse() {
         return response;
     }
 
@@ -57,38 +54,37 @@ public class ClientResponse implements IdentifiedDataSerializable {
     }
 
     public boolean isEvent() {
-        return event;
+        return isEvent;
     }
 
+    public boolean isError() {
+        return isError;
+    }
+
+    @Override
     public int getFactoryId() {
         return ClientDataSerializerHook.ID;
     }
 
+    @Override
     public int getId() {
         return ClientDataSerializerHook.CLIENT_RESPONSE;
     }
 
+    @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeInt(callId);
-        out.writeBoolean(event);
-        final boolean isData = response instanceof Data;
-        out.writeBoolean(isData);
-        if (isData) {
-            ((Data)response).writeData(out);
-        } else {
-            out.writeObject(response);
-        }
+        out.writeBoolean(isEvent);
+        out.writeBoolean(isError);
+        response.writeData(out);
     }
 
+    @Override
     public void readData(ObjectDataInput in) throws IOException {
         callId = in.readInt();
-        event = in.readBoolean();
-        final boolean isData = in.readBoolean();
-        if (isData) {
-            response = new Data();
-            ((Data)response).readData(in);
-        } else {
-            response = in.readObject();
-        }
+        isEvent = in.readBoolean();
+        isError = in.readBoolean();
+        response = new Data();
+        response.readData(in);
     }
 }

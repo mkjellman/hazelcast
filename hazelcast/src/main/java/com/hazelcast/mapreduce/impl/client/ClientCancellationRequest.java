@@ -26,10 +26,14 @@ import com.hazelcast.nio.serialization.PortableReader;
 import com.hazelcast.nio.serialization.PortableWriter;
 
 import java.io.IOException;
+import java.security.Permission;
 import java.util.concurrent.CancellationException;
 
-public class ClientCancellationRequest
-        extends InvocationClientRequest {
+/**
+ * This class is used to request a map reduce job cancellation on the job owning
+ * node from the emitting client.
+ */
+public class ClientCancellationRequest extends InvocationClientRequest {
 
     private String name;
     private String jobId;
@@ -64,14 +68,16 @@ public class ClientCancellationRequest
     }
 
     @Override
-    public void write(PortableWriter writer) throws IOException {
+    public void write(PortableWriter writer)
+            throws IOException {
         super.write(writer);
         writer.writeUTF("name", name);
         writer.writeUTF("jobId", jobId);
     }
 
     @Override
-    public void read(PortableReader reader) throws IOException {
+    public void read(PortableReader reader)
+            throws IOException {
         super.read(reader);
         name = reader.readUTF("name");
         jobId = reader.readUTF("jobId");
@@ -87,4 +93,8 @@ public class ClientCancellationRequest
         return MapReducePortableHook.CLIENT_CANCELLATION_REQUEST;
     }
 
+    @Override
+    public Permission getRequiredPermission() {
+        return null;
+    }
 }

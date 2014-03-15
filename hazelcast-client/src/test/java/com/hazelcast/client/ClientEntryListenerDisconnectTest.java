@@ -45,24 +45,19 @@ public class ClientEntryListenerDisconnectTest {
         Hazelcast.newHazelcastInstance(config);
 
         ClientConfig clientConfig = new ClientConfig();
-        clientConfig.addAddress("localhost:6701", "localhost:6702");
+        clientConfig.getNetworkConfig().addAddress("localhost:6701", "localhost:6702");
         clientConfig.setGroupConfig(new GroupConfig("test", "test"));
-        clientConfig.setConnectionAttemptLimit(100);
-        clientConfig.setSmartRouting(false);
+        clientConfig.getNetworkConfig().setConnectionAttemptLimit(100);
+        clientConfig.getNetworkConfig().setSmartRouting(false);
 
         HazelcastInstance client = HazelcastClient.newHazelcastClient(clientConfig);
         IMap<Integer, GenericEvent> mapClient = client.getMap("test");
 
-        mapClient.addEntryListener(new EntryListener<Integer, GenericEvent>() {
+        mapClient.addEntryListener(new EntryAdapter<Integer, GenericEvent>() {
 
             public void entryAdded(EntryEvent<Integer, GenericEvent> event) {
                 adds++;
             }
-
-            public void entryRemoved(EntryEvent<Integer, GenericEvent> event) {}
-
-            public void entryUpdated(EntryEvent<Integer, GenericEvent> event) {}
-
             public void entryEvicted(EntryEvent<Integer, GenericEvent> event) {
                 if (event.getValue() == null) evictionsNull++;
             }

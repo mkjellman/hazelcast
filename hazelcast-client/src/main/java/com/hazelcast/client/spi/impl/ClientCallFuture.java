@@ -37,34 +37,36 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ClientCallFuture<V> implements ICompletableFuture<V>, Callback {
+
+    private static final int MAX_RESEND_COUNT = 20;
 
     private Object response;
 
     private final ClientRequest request;
 
-    private final ClientConnection connection;
-
-    private final ClientClusterServiceImpl clusterService;
-
     private final ClientExecutionServiceImpl executionService;
+
+    private final ClientInvocationServiceImpl invocationService;
 
     private final SerializationService serializationService;
 
     private final EventHandler handler;
 
-    private volatile int reSendCount = 0;
+    private AtomicInteger reSendCount = new AtomicInteger();
+
+    private volatile ClientConnection connection;
 
     private List<ExecutionCallbackNode> callbackNodeList = new LinkedList<ExecutionCallbackNode>();
 
-    public ClientCallFuture(HazelcastClient client, ClientConnection connection, ClientRequest request, EventHandler handler) {
-        this.clusterService = (ClientClusterServiceImpl)client.getClientClusterService();
-        this.executionService = (ClientExecutionServiceImpl)client.getClientExecutionService();
+    public ClientCallFuture(HazelcastClient client, ClientRequest request, EventHandler handler) {
+        this.invocationService = (ClientInvocationServiceImpl) client.getInvocationService();
+        this.executionService = (ClientExecutionServiceImpl) client.getClientExecutionService();
         this.serializationService = client.getSerializationService();
         this.request = request;
         this.handler = handler;
-        this.connection = connection;
     }
 
     public boolean cancel(boolean mayInterruptIfRunning) {
@@ -115,7 +117,7 @@ public class ClientCallFuture<V> implements ICompletableFuture<V>, Callback {
         }
 
         if (response instanceof TargetDisconnectedException || response instanceof HazelcastInstanceNotActiveException) {
-            if (request instanceof RetryableRequest || clusterService.isRedoOperation()) {
+            if (request instanceof RetryableRequest || invocationService.isRedoOperation()) {
                 if (resend()) {
                     return;
                 }
@@ -129,11 +131,10 @@ public class ClientCallFuture<V> implements ICompletableFuture<V>, Callback {
             if (this.response != null && handler == null) {
                 throw new IllegalArgumentException("The Future.set method can only be called once");
             }
-            if (this.response != null && response instanceof String) {
-                String uuid = (String) this.response;
-                String alias = (String) response;
-                int callId = request.getCallId();
-                clusterService.reRegisterListener(uuid, alias, callId);
+            if (this.response != null && !(response instanceof Throwable)) {
+                String uuid = serializationService.toObject(this.response);
+                String alias = serializationService.toObject(response);
+                invocationService.reRegisterListener(uuid, alias, request.getCallId());
                 return;
             }
             this.response = response;
@@ -163,11 +164,14 @@ public class ClientCallFuture<V> implements ICompletableFuture<V>, Callback {
             }
             throw new ExecutionException((Throwable) response);
         }
+        if (response == null) {
+            throw new TimeoutException();
+        }
         return (V) response;
     }
 
     public void andThen(ExecutionCallback<V> callback) {
-        andThen(callback, executionService.getExecutor());
+        andThen(callback, executionService.getAsyncExecutor());
     }
 
     public void andThen(ExecutionCallback<V> callback, Executor executor) {
@@ -192,9 +196,8 @@ public class ClientCallFuture<V> implements ICompletableFuture<V>, Callback {
         return connection;
     }
 
-    private boolean resend() {
-        reSendCount++;
-        if (reSendCount > ClientClusterServiceImpl.RETRY_COUNT) {
+    public boolean resend() {
+        if (handler == null && reSendCount.incrementAndGet() > MAX_RESEND_COUNT) {
             return false;
         }
         executionService.execute(new ReSendTask());
@@ -213,12 +216,20 @@ public class ClientCallFuture<V> implements ICompletableFuture<V>, Callback {
         });
     }
 
+    public void setConnection(ClientConnection connection) {
+        this.connection = connection;
+    }
+
     class ReSendTask implements Runnable {
         public void run() {
             try {
-                clusterService.reSend(ClientCallFuture.this);
+                invocationService.reSend(ClientCallFuture.this);
             } catch (Exception e) {
-                setResponse(e);
+                if (handler != null) {
+                    invocationService.registerFailedListener(ClientCallFuture.this);
+                } else {
+                    setResponse(e);
+                }
             }
         }
     }

@@ -32,8 +32,8 @@ public class ClientSemaphoreProxy extends ClientProxy implements ISemaphore {
     private final String name;
     private volatile Data key;
 
-    public ClientSemaphoreProxy(String serviceName, String objectId) {
-        super(serviceName, objectId);
+    public ClientSemaphoreProxy(String instanceName, String serviceName, String objectId) {
+        super(instanceName, serviceName, objectId);
         this.name = objectId;
     }
 
@@ -124,5 +124,10 @@ public class ClientSemaphoreProxy extends ClientProxy implements ISemaphore {
         if (permits < 0) {
             throw new IllegalArgumentException("Permits cannot be negative!");
         }
+    }
+
+    @Override
+    public String toString() {
+        return "ISemaphore{" + "name='" + getName() + '\'' + '}';
     }
 }

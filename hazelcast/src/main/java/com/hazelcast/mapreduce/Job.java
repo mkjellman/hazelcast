@@ -29,7 +29,7 @@ import com.hazelcast.spi.annotation.Beta;
  * times <b>once the configuration is finished</b>.
  * </p>
  * <p>
- * <b>Caution: The generic types of Jobs change depending on the used methods which can make it needed to use
+ * <b>Caution: The generic types of Jobs change depending on the used methods which can make it necessary to use
  * different assignment variables when used over multiple source lines.</b>
  * </p>
  * <p>
@@ -39,15 +39,14 @@ import com.hazelcast.spi.annotation.Beta;
  * IMap&lt;Integer, Integer> map = (...) hz.getMap( "default" );
  * JobTracker tracker = hz.getJobTracker( "default" );
  * Job&lt;Integer, Integer> job = tracker.newJob( KeyValueSource.fromMap( map ) );
- * CompletableFuture&lt;Map&lt;String, Integer>> future = job
+ * ICompletableFuture&lt;Map&lt;String, Integer>> future = job
  *      .mapper( buildMapper() ).reducer( buildReducer() ).submit();
  * Map&lt;String, Integer> results = future.get();
  * </pre>
  * </p>
  *
- * @param <KeyIn>    type of key used as input key type
- * @param <ValueIn>  type of value used as input value type
- *
+ * @param <KeyIn>   type of key used as input key type
+ * @param <ValueIn> type of value used as input value type
  * @since 3.2
  */
 @Beta
@@ -106,7 +105,9 @@ public interface Job<KeyIn, ValueIn> {
      * Defines the mapper for this task. This method is not idempotent and can be callable only one time. Further
      * calls result in an {@link IllegalStateException} to be thrown telling you to not change the internal state.
      *
-     * @param mapper tasks mapper
+     * @param mapper     tasks mapper
+     * @param <KeyOut>   type of the emitted key
+     * @param <ValueOut> type of the emitted value
      * @return instance of this Job with generics changed on usage
      */
     <KeyOut, ValueOut> MappingJob<KeyIn, KeyOut, ValueOut> mapper(Mapper<KeyIn, ValueIn, KeyOut, ValueOut> mapper);

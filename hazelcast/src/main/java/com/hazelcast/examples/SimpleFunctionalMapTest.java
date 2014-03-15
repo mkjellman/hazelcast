@@ -22,22 +22,32 @@ import com.hazelcast.core.IMap;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class SimpleFunctionalMapTest {
+/**
+ * A simple functional Map test
+ */
+public final class SimpleFunctionalMapTest {
 
-    public static final int ENTRY_COUNT = 1000;
-    public static final int KB = 10240;
-    public static final int STATS_SECONDS = 10;
+    private static final int ENTRY_COUNT = 1000;
+    private static final int KB = 10240;
+    private static final int STATS_SECONDS = 10;
+    private static final Random RANDOM = new Random();
 
-    private SimpleFunctionalMapTest(){}
+    private SimpleFunctionalMapTest() {
+    }
 
-
+    /**
+     * This test runs continuously until an exception is thrown.
+     * No args
+     */
     public static void main(String[] args) {
+
         int threadCount = 40;
         final Stats stats = new Stats();
         final HazelcastInstance hazelcast = Hazelcast.newHazelcastInstance(null);
@@ -47,8 +57,8 @@ public class SimpleFunctionalMapTest {
                 public void run() {
                     IMap map = hazelcast.getMap("default");
                     while (true) {
-                        int keyInt = (int) (Math.random() * ENTRY_COUNT);
-                        int operation = ((int) (Math.random() * 1000)) % 20;
+                        int keyInt = (int) (RANDOM.nextFloat() * ENTRY_COUNT);
+                        int operation = ((int) (RANDOM.nextFloat() * 1000)) % 20;
                         Object key = String.valueOf(keyInt);
                         if (operation < 1) {
                             map.size();
@@ -72,16 +82,19 @@ public class SimpleFunctionalMapTest {
                         } else if (operation < 7) {
                             Collection col = map.values();
                             for (Object o : col) {
+                                int i = 0;
                             }
                             stats.increment("values");
                         } else if (operation < 8) {
                             Collection col = map.keySet();
                             for (Object o : col) {
+                                int i = 0;
                             }
                             stats.increment("keySet");
                         } else if (operation < 9) {
                             Collection col = map.entrySet();
                             for (Object o : col) {
+                                int i = 0;
                             }
                             stats.increment("entrySet");
                         } else {
@@ -111,12 +124,15 @@ public class SimpleFunctionalMapTest {
     }
 
     public static Object createValue() {
-        int numberOfK = (((int) (Math.random() * 1000)) % 40) + 1;
+        int numberOfK = (((int) (RANDOM.nextFloat() * 1000)) % 40) + 1;
         return new byte[numberOfK * KB];
     }
 
+    /**
+     * Map statistics class
+     */
     public static class Stats {
-        Map<String, AtomicLong> mapStats = new ConcurrentHashMap(10);
+        Map<String, AtomicLong> mapStats = new ConcurrentHashMap<String, AtomicLong>(10);
 
         public Stats() {
             mapStats.put("put", new AtomicLong(0));

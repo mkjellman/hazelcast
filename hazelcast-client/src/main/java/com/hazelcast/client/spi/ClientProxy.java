@@ -16,6 +16,7 @@
 
 package com.hazelcast.client.spi;
 
+import com.hazelcast.client.BaseClientRemoveListenerRequest;
 import com.hazelcast.client.ClientDestroyRequest;
 import com.hazelcast.client.ClientRequest;
 import com.hazelcast.client.util.ListenerUtil;
@@ -33,13 +34,16 @@ import java.util.concurrent.Future;
  */
 public abstract class ClientProxy implements DistributedObject {
 
+    protected final String instanceName;
+
     private final String serviceName;
 
     private final String objectName;
 
     private volatile ClientContext context;
 
-    protected ClientProxy(String serviceName, String objectName) {
+    protected ClientProxy(String instanceName, String serviceName, String objectName) {
+        this.instanceName = instanceName;
         this.serviceName = serviceName;
         this.objectName = objectName;
     }
@@ -52,7 +56,7 @@ public abstract class ClientProxy implements DistributedObject {
         return ListenerUtil.listen(context, registrationRequest, null, handler);
     }
 
-    protected final boolean stopListening(ClientRequest request, String registrationId){
+    protected final boolean stopListening(BaseClientRemoveListenerRequest request, String registrationId){
         return ListenerUtil.stopListening(context, request, registrationId);
     }
 
@@ -64,7 +68,7 @@ public abstract class ClientProxy implements DistributedObject {
         return context;
     }
 
-    final void setContext(ClientContext context) {
+    protected final void setContext(ClientContext context) {
         this.context = context;
     }
 
@@ -98,6 +102,9 @@ public abstract class ClientProxy implements DistributedObject {
     }
 
     protected abstract void onDestroy();
+
+    protected void onShutdown() {
+    }
 
     protected <T> T invoke(ClientRequest req, Object key) {
         try {
@@ -138,5 +145,27 @@ public abstract class ClientProxy implements DistributedObject {
         if (o == null) {
             throw new NullPointerException("Object is null");
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        ClientProxy that = (ClientProxy) o;
+
+        if (!instanceName.equals(that.instanceName)) return false;
+        if (!objectName.equals(that.objectName)) return false;
+        if (!serviceName.equals(that.serviceName)) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = instanceName.hashCode();
+        result = 31 * result + serviceName.hashCode();
+        result = 31 * result + objectName.hashCode();
+        return result;
     }
 }

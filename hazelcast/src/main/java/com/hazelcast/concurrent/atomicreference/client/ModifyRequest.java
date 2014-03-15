@@ -19,7 +19,6 @@ package com.hazelcast.concurrent.atomicreference.client;
 import com.hazelcast.client.ClientEngine;
 import com.hazelcast.client.PartitionClientRequest;
 import com.hazelcast.client.SecureRequest;
-import com.hazelcast.concurrent.atomicreference.AtomicReferencePortableHook;
 import com.hazelcast.concurrent.atomicreference.AtomicReferenceService;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -54,11 +53,6 @@ public abstract class ModifyRequest extends PartitionClientRequest implements Po
         ClientEngine clientEngine = getClientEngine();
         Data key = clientEngine.getSerializationService().toData(name);
         return clientEngine.getPartitionService().getPartitionId(key);
-    }
-
-    @Override
-    protected int getReplicaIndex() {
-        return 0;
     }
 
     @Override

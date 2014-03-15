@@ -25,6 +25,7 @@ import com.hazelcast.security.UsernamePasswordCredentials;
 import com.hazelcast.util.ExceptionUtil;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -83,8 +84,8 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
                 }
             }
             if (configurationFile == null) {
-                configFile = "hazelcast-client-default.xml";
-                configurationFile = new File("hazelcast-client-default.xml");
+                configFile = "hazelcast-client.xml";
+                configurationFile = new File("hazelcast-client.xml");
                 if (!configurationFile.exists()) {
                     configurationFile = null;
                 }
@@ -94,7 +95,6 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
                 logger.info("Using configuration file at " + configurationFile.getAbsolutePath());
                 try {
                     in = new FileInputStream(configurationFile);
-                    configurationUrl = configurationFile.toURI().toURL();
                 } catch (final Exception e) {
                     String msg = "Having problem reading config file at '" + configFile + "'.";
                     msg += "\nException message: " + e.getMessage();
@@ -105,11 +105,18 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
             }
             if (in == null) {
                 logger.info("Looking for hazelcast-client.xml config file in classpath.");
-                configurationUrl = Config.class.getClassLoader().getResource("hazelcast-client-default.xml");
+                configurationUrl = Config.class.getClassLoader().getResource("hazelcast-client.xml");
                 if (configurationUrl == null) {
-                    throw new IllegalStateException("Cannot find hazelcast-client.xml in classpath, giving up.");
+                    configurationUrl = Config.class.getClassLoader().getResource("hazelcast-client-default.xml");
+                    logger.warning(
+                            "Could not find hazelcast-client.xml in classpath.\nHazelcast will use hazelcast-client-default.xml config file in jar.");
+                    if (configurationUrl == null) {
+                        logger.warning("Could not find hazelcast-client-default.xml in the classpath!"
+                                + "\nThis may be due to a wrong-packaged or corrupted jar file.");
+                        return;
+                    }
                 }
-                logger.info( "Using configuration file " + configurationUrl.getFile() + " in the classpath.");
+                logger.info("Using configuration file " + configurationUrl.getFile() + " in the classpath.");
                 in = configurationUrl.openStream();
                 if (in == null) {
                     throw new IllegalStateException("Cannot read configuration file, giving up.");
@@ -119,6 +126,7 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
             logger.severe("Error while creating configuration:" + e.getMessage(), e);
         }
     }
+
 
     public ClientConfig build() {
         return build(Thread.currentThread().getContextClassLoader());
@@ -172,28 +180,31 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
                 handleLoadBalancer(node);
             } else if ("near-cache".equals(nodeName)) {
                 handleNearCache(node);
+            } else if ("executor-pool-size".equals(nodeName)) {
+                final int poolSize = Integer.parseInt(getTextContent(node));
+                clientConfig.setExecutorPoolSize(poolSize);
             }
         }
     }
 
-    private void handleNearCache(Node node){
+    private void handleNearCache(Node node) {
         final String name = getAttribute(node, "name");
         final NearCacheConfig nearCacheConfig = new NearCacheConfig();
         for (Node child : new IterableNodeList(node.getChildNodes())) {
             final String nodeName = cleanNodeName(child);
             if ("max-size".equals(nodeName)) {
                 nearCacheConfig.setMaxSize(Integer.parseInt(getTextContent(child)));
-            } else if ("time-to-live-seconds".equals(nodeName)){
+            } else if ("time-to-live-seconds".equals(nodeName)) {
                 nearCacheConfig.setTimeToLiveSeconds(Integer.parseInt(getTextContent(child)));
-            } else if ("max-idle-seconds".equals(nodeName)){
+            } else if ("max-idle-seconds".equals(nodeName)) {
                 nearCacheConfig.setMaxIdleSeconds(Integer.parseInt(getTextContent(child)));
-            } else if ("eviction-policy".equals(nodeName)){
+            } else if ("eviction-policy".equals(nodeName)) {
                 nearCacheConfig.setEvictionPolicy(getTextContent(child));
-            } else if ("in-memory-format".equals(nodeName)){
+            } else if ("in-memory-format".equals(nodeName)) {
                 nearCacheConfig.setInMemoryFormat(InMemoryFormat.valueOf(getTextContent(child)));
-            } else if ("invalidate-on-change".equals(nodeName)){
+            } else if ("invalidate-on-change".equals(nodeName)) {
                 nearCacheConfig.setInvalidateOnChange(Boolean.parseBoolean(getTextContent(child)));
-            } else if ("cache-local-entries".equals(nodeName)){
+            } else if ("cache-local-entries".equals(nodeName)) {
                 nearCacheConfig.setCacheLocalEntries(Boolean.parseBoolean(getTextContent(child)));
             }
         }
@@ -210,31 +221,51 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
     }
 
     private void handleNetwork(Node node) {
+        final ClientNetworkConfig clientNetworkConfig = new ClientNetworkConfig();
         for (Node child : new IterableNodeList(node.getChildNodes())) {
             final String nodeName = cleanNodeName(child);
             if ("cluster-members".equals(nodeName)) {
-                handleClusterMembers(child);
+                handleClusterMembers(child, clientNetworkConfig);
             } else if ("smart-routing".equals(nodeName)) {
-                clientConfig.setSmartRouting(Boolean.parseBoolean(getTextContent(child)));
+                clientNetworkConfig.setSmartRouting(Boolean.parseBoolean(getTextContent(child)));
             } else if ("redo-operation".equals(nodeName)) {
-                clientConfig.setRedoOperation(Boolean.parseBoolean(getTextContent(child)));
-            } else if ("connection-pool-size".equals(nodeName)) {
-                clientConfig.setConnectionPoolSize(Integer.parseInt(getTextContent(child)));
+                clientNetworkConfig.setRedoOperation(Boolean.parseBoolean(getTextContent(child)));
             } else if ("connection-timeout".equals(nodeName)) {
-                clientConfig.setConnectionTimeout(Integer.parseInt(getTextContent(child)));
+                clientNetworkConfig.setConnectionTimeout(Integer.parseInt(getTextContent(child)));
             } else if ("connection-attempt-period".equals(nodeName)) {
-                clientConfig.setConnectionAttemptPeriod(Integer.parseInt(getTextContent(child)));
+                clientNetworkConfig.setConnectionAttemptPeriod(Integer.parseInt(getTextContent(child)));
             } else if ("connection-attempt-limit".equals(nodeName)) {
-                clientConfig.setConnectionAttemptLimit(Integer.parseInt(getTextContent(child)));
+                clientNetworkConfig.setConnectionAttemptLimit(Integer.parseInt(getTextContent(child)));
             } else if ("socket-options".equals(nodeName)) {
-                handleSocketOptions(child);
-            }  else if ("socket-interceptor".equals(nodeName)) {
-                handleSocketInterceptorConfig(node);
+                handleSocketOptions(child, clientNetworkConfig);
+            } else if ("socket-interceptor".equals(nodeName)) {
+                handleSocketInterceptorConfig(node, clientNetworkConfig);
+            } else if ("ssl".equals(nodeName)) {
+                handleSSLConfig(node, clientNetworkConfig);
             }
         }
+        clientConfig.setNetworkConfig(clientNetworkConfig);
     }
 
-    private void handleSocketOptions(Node node) {
+    private void handleSSLConfig(final org.w3c.dom.Node node, ClientNetworkConfig clientNetworkConfig) {
+        SSLConfig sslConfig = new SSLConfig();
+        final NamedNodeMap atts = node.getAttributes();
+        final Node enabledNode = atts.getNamedItem("enabled");
+        final boolean enabled = enabledNode != null && checkTrue(getTextContent(enabledNode).trim());
+        sslConfig.setEnabled(enabled);
+
+        for (org.w3c.dom.Node n : new IterableNodeList(node.getChildNodes())) {
+            final String nodeName = cleanNodeName(n.getNodeName());
+            if ("factory-class-name".equals(nodeName)) {
+                sslConfig.setFactoryClassName(getTextContent(n).trim());
+            } else if ("properties".equals(nodeName)) {
+                fillProperties(n, sslConfig.getProperties());
+            }
+        }
+        clientNetworkConfig.setSSLConfig(sslConfig);
+    }
+
+    private void handleSocketOptions(Node node, ClientNetworkConfig clientNetworkConfig) {
         SocketOptions socketOptions = clientConfig.getSocketOptions();
         for (Node child : new IterableNodeList(node.getChildNodes())) {
             final String nodeName = cleanNodeName(child);
@@ -246,18 +277,17 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
                 socketOptions.setReuseAddress(Boolean.parseBoolean(getTextContent(child)));
             } else if ("linger-seconds".equals(nodeName)) {
                 socketOptions.setLingerSeconds(Integer.parseInt(getTextContent(child)));
-            } else if ("timeout".equals(nodeName)) {
-                socketOptions.setTimeout(Integer.parseInt(getTextContent(child)));
             } else if ("buffer-size".equals(nodeName)) {
                 socketOptions.setBufferSize(Integer.parseInt(getTextContent(child)));
             }
         }
+        clientNetworkConfig.setSocketOptions(socketOptions);
     }
 
-    private void handleClusterMembers(Node node) {
+    private void handleClusterMembers(Node node, ClientNetworkConfig clientNetworkConfig) {
         for (Node child : new IterableNodeList(node.getChildNodes())) {
             if ("address".equals(cleanNodeName(child))) {
-                clientConfig.addAddress(getTextContent(child));
+                clientNetworkConfig.addAddress(getTextContent(child));
             }
         }
     }
@@ -306,9 +336,9 @@ public class XmlClientConfigBuilder extends AbstractXmlConfigHelper {
         clientConfig.addProxyFactoryConfig(proxyFactoryConfig);
     }
 
-    private void handleSocketInterceptorConfig(final org.w3c.dom.Node node) {
+    private void handleSocketInterceptorConfig(final org.w3c.dom.Node node, ClientNetworkConfig clientNetworkConfig) {
         SocketInterceptorConfig socketInterceptorConfig = parseSocketInterceptorConfig(node);
-        clientConfig.setSocketInterceptorConfig(socketInterceptorConfig);
+        clientNetworkConfig.setSocketInterceptorConfig(socketInterceptorConfig);
     }
 
     private void handleSecurity(Node node) throws Exception {

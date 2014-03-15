@@ -17,9 +17,7 @@
 package com.hazelcast.client.txn;
 
 import com.hazelcast.client.HazelcastClient;
-import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.client.connection.nio.ClientConnection;
-import com.hazelcast.client.spi.impl.ClientClusterServiceImpl;
 import com.hazelcast.client.txn.proxy.*;
 import com.hazelcast.collection.list.ListService;
 import com.hazelcast.collection.set.SetService;
@@ -30,7 +28,7 @@ import com.hazelcast.queue.QueueService;
 import com.hazelcast.transaction.*;
 import com.hazelcast.transaction.impl.Transaction;
 
-import java.io.IOException;
+import javax.transaction.xa.XAResource;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -39,14 +37,22 @@ import java.util.Map;
  */
 public class TransactionContextProxy implements TransactionContext {
 
+    final ClientTransactionManager transactionManager;
     final HazelcastClient client;
     final TransactionProxy transaction;
     final ClientConnection connection;
     private final Map<TransactionalObjectKey, TransactionalObject> txnObjectMap = new HashMap<TransactionalObjectKey, TransactionalObject>(2);
+    private XAResourceProxy xaResource;
 
-    public TransactionContextProxy(HazelcastClient client, TransactionOptions options) {
-        this.client = client;
-        this.connection = connect();
+
+    public TransactionContextProxy(ClientTransactionManager transactionManager, TransactionOptions options) {
+        this.transactionManager = transactionManager;
+        this.client = transactionManager.getClient();
+        try {
+            this.connection = client.getConnectionManager().tryToConnect(null);
+        } catch (Exception e) {
+            throw new HazelcastException("Could not obtain Connection!!!", e);
+        }
         this.transaction = new TransactionProxy(client, options, connection);
     }
 
@@ -59,7 +65,7 @@ public class TransactionContextProxy implements TransactionContext {
     }
 
     public void commitTransaction() throws TransactionException {
-        transaction.commit();
+        transaction.commit(true);
     }
 
     public void rollbackTransaction() {
@@ -122,23 +128,22 @@ public class TransactionContextProxy implements TransactionContext {
         return client;
     }
 
-    private ClientConnection connect() {
-        int count = 0;
-        final ClientConnectionManager connectionManager = client.getConnectionManager();
-        IOException lastError = null;
-        while (count < ClientClusterServiceImpl.RETRY_COUNT) {
-            try {
-                return connectionManager.getRandomConnection();
-            } catch (IOException e) {
-                lastError = e;
-            }
-            count++;
+    public ClientTransactionManager getTransactionManager() {
+        return transactionManager;
+    }
+
+    public XAResource getXaResource() {
+        if (xaResource == null) {
+            xaResource = new XAResourceProxy(this);
         }
-        throw new HazelcastException("Could not obtain Connection!!!", lastError);
+        return xaResource;
+    }
+
+    public boolean isXAManaged() {
+        return transaction.getXid() != null;
     }
 
     private static class TransactionalObjectKey {
-
         private final String serviceName;
         private final String name;
 

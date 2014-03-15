@@ -85,18 +85,11 @@ public interface HazelcastInstance {
     <K, V> IMap<K, V> getMap(String name);
 
     /**
-     * Returns the replicated map instance with the specified name.
-     *
-     * @param name name of the distributed map
-     * @return replicated map instance with specified name
-     */
-    <K, V> ReplicatedMap<K, V> getReplicatedMap(String name);
-
-    /**
      * Returns the job tracker instance with the specified name.
      *
      * @param name name of the job tracker
      * @return job tracker instance with specified name
+     * @since 3.2
      */
     JobTracker getJobTracker(String name);
 
@@ -301,7 +294,7 @@ public interface HazelcastInstance {
 
     /**
      * Returns the partition service of this Hazelcast instance.
-     * PartitionService allows you to introspect current partitions in the
+     * InternalPartitionService allows you to introspect current partitions in the
      * cluster, partition owner members and listen for partition migration events.
      *
      * @return partition service

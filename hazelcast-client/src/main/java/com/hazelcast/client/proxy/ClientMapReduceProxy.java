@@ -56,8 +56,8 @@ public class ClientMapReduceProxy
 
     private final ConcurrentMap<String, ClientTrackableJob> trackableJobs = new ConcurrentHashMap<String, ClientTrackableJob>();
 
-    public ClientMapReduceProxy(String serviceName, String objectName) {
-        super(serviceName, objectName);
+    public ClientMapReduceProxy(String instanceName, String serviceName, String objectName) {
+        super(instanceName, serviceName, objectName);
     }
 
     @Override
@@ -75,6 +75,11 @@ public class ClientMapReduceProxy
     @Override
     public <V> TrackableJob<V> getTrackableJob(String jobId) {
         return trackableJobs.get(jobId);
+    }
+
+    @Override
+    public String toString() {
+        return "JobTracker{" + "name='" + getName() + '\'' + '}';
     }
 
     /*
@@ -196,8 +201,7 @@ public class ClientMapReduceProxy
         @Override
         public V get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
             ValidationUtil.isNotNull(unit, "unit");
-            latch.await(timeout, unit);
-            if (!isDone()) {
+            if (!latch.await(timeout, unit) || !isDone()) {
                 throw new TimeoutException("timeout reached");
             }
             return getResult();

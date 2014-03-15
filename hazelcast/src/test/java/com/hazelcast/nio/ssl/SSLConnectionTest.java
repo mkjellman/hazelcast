@@ -24,11 +24,10 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.Member;
 import com.hazelcast.instance.GroupProperties;
-import com.hazelcast.instance.TestUtil;
 import com.hazelcast.nio.IOUtil;
 import com.hazelcast.nio.SocketChannelWrapper;
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.SlowTest;
+import com.hazelcast.test.annotation.NightlyTest;
 import org.junit.*;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -46,8 +45,11 @@ import java.util.Properties;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.hazelcast.instance.TestUtil.warmUpPartitions;
+import static org.junit.Assert.assertEquals;
+
 @RunWith(HazelcastSerialClassRunner.class)
-@Category(SlowTest.class)
+@Category(NightlyTest.class)
 public class SSLConnectionTest {
 
     @BeforeClass
@@ -113,7 +115,7 @@ public class SSLConnectionTest {
                 out.writeInt(i);
                 out.flush();
                 int k = in.readInt();
-                Assert.assertEquals(i * 2 + 1, k);
+                assertEquals(i * 2 + 1, k);
             }
         } finally {
             ex.shutdownNow();
@@ -253,7 +255,7 @@ public class SSLConnectionTest {
             ex.execute(new ChannelReader(socketChannel, count, latch) {
                 void processData(int i, int data) throws Exception {
                     try {
-                        Assert.assertEquals(i * 2 + 1, data);
+                        assertEquals(i * 2 + 1, data);
                     } catch (AssertionError e) {
                         error.compareAndSet(null, e);
                         throw e;
@@ -289,16 +291,16 @@ public class SSLConnectionTest {
         HazelcastInstance h2 = Hazelcast.newHazelcastInstance(config);
         HazelcastInstance h3 = Hazelcast.newHazelcastInstance(config);
 
-        Assert.assertEquals(3, h1.getCluster().getMembers().size());
-        Assert.assertEquals(3, h2.getCluster().getMembers().size());
-        Assert.assertEquals(3, h3.getCluster().getMembers().size());
+        assertEquals(3, h1.getCluster().getMembers().size());
+        assertEquals(3, h2.getCluster().getMembers().size());
+        assertEquals(3, h3.getCluster().getMembers().size());
 
-        TestUtil.warmUpPartitions(h1, h2, h3);
+        warmUpPartitions(h1, h2, h3);
         Member owner1 = h1.getPartitionService().getPartition(0).getOwner();
         Member owner2 = h2.getPartitionService().getPartition(0).getOwner();
         Member owner3 = h3.getPartitionService().getPartition(0).getOwner();
-        Assert.assertEquals(owner1, owner2);
-        Assert.assertEquals(owner1, owner3);
+        assertEquals(owner1, owner2);
+        assertEquals(owner1, owner3);
 
         String name = "ssl-test";
         int count = 128;
@@ -310,13 +312,13 @@ public class SSLConnectionTest {
         IMap<Integer, byte[]> map2 = h2.getMap(name);
         for (int i = 1; i < count; i++) {
             byte[] bytes = map2.get(i);
-            Assert.assertEquals(i * 1024, bytes.length);
+            assertEquals(i * 1024, bytes.length);
         }
 
         IMap<Integer, byte[]> map3 = h3.getMap(name);
         for (int i = 1; i < count; i++) {
             byte[] bytes = map3.get(i);
-            Assert.assertEquals(i * 1024, bytes.length);
+            assertEquals(i * 1024, bytes.length);
         }
     }
 }

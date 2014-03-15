@@ -16,46 +16,39 @@
 
 package com.hazelcast.client;
 
-import com.hazelcast.nio.serialization.PortableReader;
-import com.hazelcast.nio.serialization.PortableWriter;
+import java.security.Permission;
 
-import java.io.IOException;
-
-/**
- * @author ali 23/12/13
- */
-public class RemoveDistributedObjectListenerRequest extends CallableClientRequest {
-
-    String registrationId;
+public class RemoveDistributedObjectListenerRequest extends BaseClientRemoveListenerRequest {
 
     public RemoveDistributedObjectListenerRequest() {
     }
 
     public RemoveDistributedObjectListenerRequest(String registrationId) {
-        this.registrationId = registrationId;
+        super(null, registrationId);
     }
 
+    @Override
     public Object call() throws Exception {
         return clientEngine.getProxyService().removeProxyListener(registrationId);
     }
 
+    @Override
     public String getServiceName() {
         return null;
     }
 
+    @Override
     public int getFactoryId() {
         return ClientPortableHook.ID;
     }
 
+    @Override
     public int getClassId() {
         return ClientPortableHook.REMOVE_LISTENER;
     }
 
-    public void write(PortableWriter writer) throws IOException {
-        writer.writeUTF("r", registrationId);
-    }
-
-    public void read(PortableReader reader) throws IOException {
-        registrationId = reader.readUTF("r");
+    @Override
+    public Permission getRequiredPermission() {
+        return null;
     }
 }

@@ -16,25 +16,23 @@
 
 package com.hazelcast.hibernate;
 
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.hibernate.entity.DummyEntity;
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.test.annotation.NightlyTest;
 import com.hazelcast.test.annotation.SlowTest;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.cfg.Environment;
-import org.junit.AfterClass;
 import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.util.Date;
 import java.util.Properties;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(SlowTest.class)
@@ -65,8 +63,8 @@ public class RegionFactoryDefaultTest extends HibernateStatisticsTestSupport {
         session = sf.openSession();
         try {
             e = (DummyEntity) session.get(DummyEntity.class, 1L);
-            Assert.assertEquals("test", e.getName());
-            Assert.assertNull(e.getDate());
+            assertEquals("test", e.getName());
+            assertNull(e.getDate());
         } catch (Exception ex) {
             ex.printStackTrace();
             Assert.fail(ex.getMessage());
@@ -78,8 +76,8 @@ public class RegionFactoryDefaultTest extends HibernateStatisticsTestSupport {
         tx = session.beginTransaction();
         try {
             e = (DummyEntity) session.get(DummyEntity.class, 1L);
-            Assert.assertEquals("test", e.getName());
-            Assert.assertNull(e.getDate());
+            assertEquals("test", e.getName());
+            assertNull(e.getDate());
             e.setName("dummy");
             e.setDate(new Date());
             session.update(e);
@@ -95,7 +93,7 @@ public class RegionFactoryDefaultTest extends HibernateStatisticsTestSupport {
         session = sf.openSession();
         try {
             e = (DummyEntity) session.get(DummyEntity.class, 1L);
-            Assert.assertEquals("dummy", e.getName());
+            assertEquals("dummy", e.getName());
             Assert.assertNotNull(e.getDate());
         } catch (Exception ex) {
             ex.printStackTrace();

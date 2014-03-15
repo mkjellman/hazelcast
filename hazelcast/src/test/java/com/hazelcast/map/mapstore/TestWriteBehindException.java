@@ -19,6 +19,7 @@ package com.hazelcast.map.mapstore;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -45,12 +46,11 @@ public class TestWriteBehindException extends HazelcastTestSupport {
 
     @Test
     public void testWriteBehindStoreWithException() throws InterruptedException {
-        MapStore mapStore = new MapStore();
+        final MapStore mapStore = new MapStore();
         mapStore.setLoadAllKeys(false);
         Config config = MapStoreTest.newConfig(mapStore, 5);
         config.setProperty("hazelcast.local.localAddress", "127.0.0.1");
-        TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(1);
-        HazelcastInstance instance = nodeFactory.newHazelcastInstance(config);
+        HazelcastInstance instance = createHazelcastInstance(config);
         IMap<Integer, String> map = instance.getMap("map");
         IMap<Integer, String> map2 = instance.getMap("map2");
         IMap<Integer, String> map3 = instance.getMap("map3");
@@ -66,14 +66,25 @@ public class TestWriteBehindException extends HazelcastTestSupport {
 
         latch1.await();
         Thread.sleep(2000);
-        assertEquals(29, mapStore.store.size());
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(29, mapStore.store.size());
+            }
+        });
 
         for (int i = 0; i < 30; i++) {
             map.delete(i);
         }
         latch2.await();
         Thread.sleep(2000);
-        assertEquals(1, mapStore.store.size());
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(1, mapStore.store.size());
+            }
+        });
+
     }
 
     class MapStore extends MapStoreTest.SimpleMapStore<Integer, String> {

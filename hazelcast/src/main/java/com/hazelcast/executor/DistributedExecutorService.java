@@ -18,7 +18,9 @@ package com.hazelcast.executor;
 
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.monitor.impl.LocalExecutorStatsImpl;
+import com.hazelcast.nio.Address;
 import com.hazelcast.spi.ExecutionService;
+import com.hazelcast.spi.ExecutionTracingService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.RemoteService;
@@ -38,30 +40,36 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
-public class DistributedExecutorService implements ManagedService, RemoteService {
+public class DistributedExecutorService implements ManagedService, RemoteService, ExecutionTracingService {
 
     public static final String SERVICE_NAME = "hz:impl:executorService";
 
     //Updates the CallableProcessor.responseFlag field. An AtomicBoolean is simpler, but creates another unwanted
     //object. Using this approach, you don't create that object.
-    private static final AtomicReferenceFieldUpdater<CallableProcessor, Boolean> responseFlagFieldUpdater =
+    private static final AtomicReferenceFieldUpdater<CallableProcessor, Boolean> RESPONSE_FLAG_FIELD_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(CallableProcessor.class, Boolean.class, "responseFlag");
 
     private NodeEngine nodeEngine;
     private ExecutionService executionService;
-    private final ConcurrentMap<String, CallableProcessor> submittedTasks = new ConcurrentHashMap<String, CallableProcessor>(100);
-    private final Set<String> shutdownExecutors = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
-    private final ConcurrentHashMap<String, LocalExecutorStatsImpl> statsMap = new ConcurrentHashMap<String, LocalExecutorStatsImpl>();
-    private final ConstructorFunction<String, LocalExecutorStatsImpl> localExecutorStatsConstructorFunction = new ConstructorFunction<String, LocalExecutorStatsImpl>() {
+    private final ConcurrentMap<String, CallableProcessor> submittedTasks
+            = new ConcurrentHashMap<String, CallableProcessor>(100);
+    private final Set<String> shutdownExecutors
+            = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+    private final ConcurrentHashMap<String, LocalExecutorStatsImpl> statsMap
+            = new ConcurrentHashMap<String, LocalExecutorStatsImpl>();
+    private final ConstructorFunction<String, LocalExecutorStatsImpl> localExecutorStatsConstructorFunction
+            = new ConstructorFunction<String, LocalExecutorStatsImpl>() {
         public LocalExecutorStatsImpl createNew(String key) {
             return new LocalExecutorStatsImpl();
         }
     };
+    private ILogger logger;
 
     @Override
     public void init(NodeEngine nodeEngine, Properties properties) {
         this.nodeEngine = nodeEngine;
         this.executionService = nodeEngine.getExecutionService();
+        this.logger = nodeEngine.getLogger(DistributedExecutorService.class);
     }
 
     @Override
@@ -86,7 +94,7 @@ public class DistributedExecutorService implements ManagedService, RemoteService
         try {
             executionService.execute(name, processor);
         } catch (RejectedExecutionException e) {
-            getLogger().warning("While executing " + callable + " on Executor[" + name + "]", e);
+            logger.warning("While executing " + callable + " on Executor[" + name + "]", e);
             if (uuid != null) {
                 submittedTasks.remove(uuid);
             }
@@ -140,15 +148,21 @@ public class DistributedExecutorService implements ManagedService, RemoteService
         getLocalExecutorStats(name).startPending();
     }
 
-    private class CallableProcessor extends FutureTask implements Runnable {
+    @Override
+    public boolean isOperationExecuting(Address callerAddress, String callerUuid, Object identifier) {
+        String uuid = String.valueOf(identifier);
+        return submittedTasks.containsKey(uuid);
+    }
+
+    private final class CallableProcessor extends FutureTask implements Runnable {
+        //is being used through the RESPONSE_FLAG_FIELD_UPDATER. Can't be private due to reflection constraint.
+        volatile Boolean responseFlag = Boolean.FALSE;
 
         private final String name;
         private final String uuid;
         private final ResponseHandler responseHandler;
         private final String callableToString;
         private final long creationTime = Clock.currentTimeMillis();
-        //is being used through the responseFlagFieldUpdater. Can't be private due to reflection constraint.
-        volatile Boolean responseFlag = Boolean.FALSE;
 
         private CallableProcessor(String name, String uuid, Callable callable, ResponseHandler responseHandler) {
             //noinspection unchecked
@@ -184,20 +198,15 @@ public class DistributedExecutorService implements ManagedService, RemoteService
         }
 
         private void logException(Exception e) {
-            ILogger logger = getLogger();
             if (logger.isFinestEnabled()) {
                 logger.finest("While executing callable: " + callableToString, e);
             }
         }
 
         private void sendResponse(Object result) {
-            if (responseFlagFieldUpdater.compareAndSet(this, Boolean.FALSE, Boolean.TRUE)) {
+            if (RESPONSE_FLAG_FIELD_UPDATER.compareAndSet(this, Boolean.FALSE, Boolean.TRUE)) {
                 responseHandler.sendResponse(result);
             }
         }
-    }
-
-    private ILogger getLogger() {
-        return nodeEngine.getLogger(DistributedExecutorService.class);
     }
 }

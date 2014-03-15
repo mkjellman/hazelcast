@@ -22,7 +22,7 @@ for (Customer customer : colCustomers) {
     // process customer
 }
 ```
-`Hazelcast.getMap()` actually returns `com.hazelcast.core.IMap` which extends `java.util.concurrent.ConcurrentMap` interface. So methods like `ConcurrentMap.putIfAbsent(key,value)` and `ConcurrentMap.replace(key,value)` can be used on distributed map as shown in the example below.
+`HazelcastInstance.getMap()` actually returns `com.hazelcast.core.IMap` which extends `java.util.concurrent.ConcurrentMap` interface. So methods like `ConcurrentMap.putIfAbsent(key,value)` and `ConcurrentMap.replace(key,value)` can be used on distributed map as shown in the example below.
 
 ```java
 import com.hazelcast.core.Hazelcast;
@@ -52,8 +52,6 @@ public boolean removeCustomer (Customer customer) {
 All `ConcurrentMap` operations such as `put` and `remove` might wait if the key is locked by another thread in the local or remote JVM, but they will eventually return with success. `ConcurrentMap` operations never throw`java.util.ConcurrentModificationException`.
 
 Also see:
-
--   Distributed Map internals.
 
 -   [Data Affinity](#data-affinity).
 

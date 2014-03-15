@@ -17,7 +17,9 @@
 package com.hazelcast.concurrent.lock.client;
 
 import com.hazelcast.client.KeyBasedClientRequest;
-import com.hazelcast.concurrent.lock.*;
+import com.hazelcast.concurrent.lock.InternalLockNamespace;
+import com.hazelcast.concurrent.lock.LockService;
+import com.hazelcast.concurrent.lock.operations.GetRemainingLeaseTimeOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -31,9 +33,6 @@ import com.hazelcast.spi.Operation;
 import java.io.IOException;
 import java.security.Permission;
 
-/**
- * @author mdogan 5/3/13
- */
 public final class GetRemainingLeaseRequest extends KeyBasedClientRequest
         implements Portable {
 
@@ -47,18 +46,18 @@ public final class GetRemainingLeaseRequest extends KeyBasedClientRequest
     }
 
     @Override
-    protected final Operation prepareOperation() {
+    protected Operation prepareOperation() {
         String name = (String) getClientEngine().toObject(key);
         return new GetRemainingLeaseTimeOperation(new InternalLockNamespace(name), key);
     }
 
     @Override
-    protected final Object getKey() {
+    protected Object getKey() {
         return key;
     }
 
     @Override
-    public final String getServiceName() {
+    public String getServiceName() {
         return LockService.SERVICE_NAME;
     }
 

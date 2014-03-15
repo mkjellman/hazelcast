@@ -22,17 +22,14 @@ import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.IQueue;
 import com.hazelcast.core.TransactionalQueue;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ProblematicTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.test.annotation.SlowTest;
 import com.hazelcast.transaction.TransactionContext;
 import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.transaction.TransactionNotActiveException;
 import com.hazelcast.transaction.TransactionOptions;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -143,9 +140,8 @@ public class TransactionQueueTest extends HazelcastTestSupport {
 
     @Test
     public void testRollbackQueue() throws Throwable {
-        Config config = new Config();
         final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(4);
-        final HazelcastInstance h1 = factory.newHazelcastInstance(config);
+        final HazelcastInstance h1 = factory.newHazelcastInstance();
 
         final TransactionContext transactionContext = h1.newTransactionContext();
 
@@ -163,9 +159,7 @@ public class TransactionQueueTest extends HazelcastTestSupport {
 
     @Test(expected = TransactionNotActiveException.class)
     public void testTxnQueueOuterTransaction() throws Throwable {
-        Config config = new Config();
-        final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
-        final HazelcastInstance h1 = factory.newHazelcastInstance(config);
+        final HazelcastInstance h1 = createHazelcastInstance();
 
         final TransactionContext transactionContext = h1.newTransactionContext();
         transactionContext.beginTransaction();
@@ -178,19 +172,18 @@ public class TransactionQueueTest extends HazelcastTestSupport {
     @Test
     @Category(ProblematicTest.class)
     public void testIssue859And863() throws Exception {
-        final int numberOfMessages = 20000;
+        final int numberOfMessages = 2000;
         final AtomicInteger count = new AtomicInteger();
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
-        Config config = new Config();
-        HazelcastInstance instance1 = factory.newHazelcastInstance(config);
-        HazelcastInstance instance2 = factory.newHazelcastInstance(config);
+        HazelcastInstance instance1 = factory.newHazelcastInstance();
+        HazelcastInstance instance2 = factory.newHazelcastInstance();
 
         String inQueueName = "in";
         String outQueueName = "out";
 
         for (int i = 0; i < numberOfMessages; i++) {
-            if (!instance1.getQueue(inQueueName).offer(new byte[1024])) {
+            if (!instance1.getQueue(inQueueName).offer(i)) {
                 throw new RuntimeException("initial put did not work");
             }
         }
@@ -245,12 +238,12 @@ public class TransactionQueueTest extends HazelcastTestSupport {
         moveMessage2.start();
 
         while (count.get() < numberOfMessages / 2) {
-            Thread.sleep(10);
+            sleepMillis(1);
         }
         instance2.getLifecycleService().terminate();
         moveMessage2.active = false;
         moveMessage2.join(10000);
-        moveMessage1.join(30000);
+        moveMessage1.join(10000);
 
         try {
             assertEquals(numberOfMessages, instance1.getQueue(outQueueName).size());

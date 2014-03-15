@@ -33,6 +33,8 @@ import org.junit.runner.RunWith;
 import java.io.IOException;
 import java.util.Properties;
 
+import static org.junit.Assert.assertEquals;
+
 /**
  * @author mdogan 8/23/13
  */
@@ -49,8 +51,6 @@ public class ClientSSLSocketTest {
     }
 
     @Test
-    @Ignore
-    // TODO: implement client ssl support!
     public void test() throws IOException {
         Properties props = TestKeyStoreUtil.createSslProperties();
         Config cfg = new Config();
@@ -61,8 +61,10 @@ public class ClientSSLSocketTest {
         final HazelcastInstance hz2 = Hazelcast.newHazelcastInstance(cfg);
 
         ClientConfig config = new ClientConfig();
-        config.addAddress("127.0.0.1");
-        config.setRedoOperation(true);
+        config.getNetworkConfig().addAddress("127.0.0.1");
+        config.getNetworkConfig().setRedoOperation(true);
+        config.getNetworkConfig().setSSLConfig(new SSLConfig().setEnabled(true).setProperties(props));
+
 
         final HazelcastInstance client = HazelcastClient.newHazelcastClient(config);
         IMap<Object, Object> clientMap = client.getMap("test");
@@ -74,7 +76,7 @@ public class ClientSSLSocketTest {
 
         IMap<Object, Object> map = hz1.getMap("test");
         for (int i = 0; i < size; i++) {
-            Assert.assertEquals(2 * i + 1, map.get(i));
+            assertEquals(2 * i + 1, map.get(i));
         }
     }
 }

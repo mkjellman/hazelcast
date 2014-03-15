@@ -19,7 +19,6 @@ package com.hazelcast.mapreduce.impl.operation;
 import com.hazelcast.mapreduce.JobPartitionState;
 import com.hazelcast.mapreduce.impl.MapReduceDataSerializerHook;
 import com.hazelcast.mapreduce.impl.MapReduceService;
-import com.hazelcast.mapreduce.impl.task.JobPartitionStateImpl;
 import com.hazelcast.mapreduce.impl.task.JobProcessInformationImpl;
 import com.hazelcast.mapreduce.impl.task.JobSupervisor;
 import com.hazelcast.nio.ObjectDataInput;
@@ -31,7 +30,13 @@ import static com.hazelcast.mapreduce.impl.operation.RequestPartitionResult.Resu
 import static com.hazelcast.mapreduce.impl.operation.RequestPartitionResult.ResultState.NO_SUPERVISOR;
 import static com.hazelcast.mapreduce.impl.operation.RequestPartitionResult.ResultState.SUCCESSFUL;
 
-public class PostPonePartitionProcessing extends ProcessingOperation {
+/**
+ * This operation is used to tell the job owner to postpone a mapping phase for the defined
+ * partitionId. This can happen if the partitionId might not yet be assigned to any cluster
+ * members.
+ */
+public class PostPonePartitionProcessing
+        extends ProcessingOperation {
 
     private volatile RequestPartitionResult result;
 
@@ -51,7 +56,8 @@ public class PostPonePartitionProcessing extends ProcessingOperation {
     }
 
     @Override
-    public void run() throws Exception {
+    public void run()
+            throws Exception {
         MapReduceService mapReduceService = getService();
         JobSupervisor supervisor = mapReduceService.getJobSupervisor(getName(), getJobId());
         if (supervisor == null) {
@@ -61,19 +67,16 @@ public class PostPonePartitionProcessing extends ProcessingOperation {
 
         JobProcessInformationImpl processInformation = supervisor.getJobProcessInformation();
 
-        for (; ; ) {
-            JobPartitionState.State newState = JobPartitionState.State.WAITING;
+        while (true) {
             JobPartitionState[] partitionStates = processInformation.getPartitionStates();
             JobPartitionState oldPartitionState = partitionStates[partitionId];
 
-            if (oldPartitionState == null
-                    || getCallerAddress().equals(oldPartitionState.getOwner())) {
+            if (oldPartitionState == null || !getCallerAddress().equals(oldPartitionState.getOwner())) {
                 result = new RequestPartitionResult(CHECK_STATE_FAILED, partitionId);
                 return;
             }
 
-            JobPartitionState newPartitionState = new JobPartitionStateImpl(getCallerAddress(), newState);
-            if (processInformation.updatePartitionState(partitionId, oldPartitionState, newPartitionState)) {
+            if (processInformation.updatePartitionState(partitionId, oldPartitionState, null)) {
                 result = new RequestPartitionResult(SUCCESSFUL, partitionId);
                 return;
             }
@@ -81,13 +84,15 @@ public class PostPonePartitionProcessing extends ProcessingOperation {
     }
 
     @Override
-    protected void writeInternal(ObjectDataOutput out) throws IOException {
+    protected void writeInternal(ObjectDataOutput out)
+            throws IOException {
         super.writeInternal(out);
         out.writeInt(partitionId);
     }
 
     @Override
-    protected void readInternal(ObjectDataInput in) throws IOException {
+    protected void readInternal(ObjectDataInput in)
+            throws IOException {
         super.readInternal(in);
         partitionId = in.readInt();
     }

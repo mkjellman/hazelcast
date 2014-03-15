@@ -34,8 +34,8 @@ public class ClientCountDownLatchProxy extends ClientProxy implements ICountDown
 
     private volatile Data key;
 
-    public ClientCountDownLatchProxy(String serviceName, String objectId) {
-        super(serviceName, objectId);
+    public ClientCountDownLatchProxy(String instanceName, String serviceName, String objectId) {
+        super(instanceName, serviceName, objectId);
     }
 
     public boolean await(long timeout, TimeUnit unit) throws InterruptedException {
@@ -77,5 +77,10 @@ public class ClientCountDownLatchProxy extends ClientProxy implements ICountDown
 
     protected  <T> T invoke(ClientRequest req) {
         return super.invoke(req, getKey());
+    }
+
+    @Override
+    public String toString() {
+        return "ICountDownLatch{" + "name='" + getName() + '\'' + '}';
     }
 }
