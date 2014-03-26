@@ -3,13 +3,14 @@
 ## Getting Started (Tutorial)
 
 
-In this short tutorial, we will create simple Java application using Hazelcast distributed map and queue. Then we will run our application twice to have two nodes (JVMs) clustered and finalize this tutorial with connecting to our cluster from another Java application by using Hazelcast Native Java Client API.
+In this short tutorial, we will:
 
--   Download the latest [Hazelcast ZIP](http://www.hazelcast.org/download/).
+1.	Create a simple Java application using Hazelcast distributed map and queue. 
+2.	Then, we will run our application twice to have two nodes (JVMs) clustered. 
+3.	And, connect to our cluster from another Java application by using Hazelcast Native Java Client API.
 
--   Unzip it and add the `lib/hazelcast.jar` to your class path.
+Let`s begin.
 
--	Deploy the `mancenter-`*version*`.war` included in the ZIP file to your web server, to be able to use the Management Center.
 
 -	Following code will start the first node and create and use `customers` map and queue.
 
@@ -44,9 +45,7 @@ public class GettingStarted {
     }
 }
 ```
--   Run this class second time to get the second node started.
-
--   Have you seen they formed a cluster? You should see something like this:
+-   Run this class second time to get the second node started. Have you seen they formed a cluster? You should see something like this:
 
 ```
 Members [2] {
@@ -55,12 +54,7 @@ Members [2] {
 }                              
 ```
 
--	Now, you can use the **Management Center** to monitor your maps, queues, other distributed data structures and nodes. Please see [Management Center](#management-center) for usage explanations. 
-
-**Connecting Hazelcast Cluster with Java Client API**
-
-
--   Besides `hazelcast.jar` you should also add `hazelcast-client.jar` to your classpath.
+-   Now, add `hazelcast-client-`*`<version>`*`.jar` to your classpath, too. This is required to be able to use a Hazelcast client. 
 
 -   Following code will start a Hazelcast Client, connect to our two node cluster and print the size of our `customers` map.
 
@@ -85,12 +79,18 @@ public class GettingStartedClient {
 ```
 -   When you run it, you will see the client properly connecting to the cluster and printing the map size as **3**.
 
-**What is Next?**
+Hazelcast also offers a tool, **Management Center**, that enables monitoring your cluster. To able to use it, deploy the `mancenter-`*`<version>`*`.war` included in the ZIP file to your web server. You can use it to monitor your maps, queues, other distributed data structures and nodes. Please see [Management Center](#management-center) for usage explanations. 
 
--   You can browse [documentation](http://www.hazelcast.com/docs.jsp) and resources for detailed features and examples.
 
--   You can email your questions to Hazelcast [mail group](http://groups.google.com/group/hazelcast).
 
--   You can browse Hazelcast [source code](https://github.com/hazelcast/hazelcast).
+
+## Resources
+
+
+-	Hazelcast source code can be found at [Github/Hazelcast](https://github.com/hazelcast/hazelcast).
+-	Hazelcast API can be found at [Hazelcast.org](http://www.hazelcast.org/docs/latest/javadoc/).
+-	More use cases and resources can be found at [Hazelcast.com](http://www.hazelcast.com).
+-	Questions and discussions can be post in [Hazelcast mail group](https://groups.google.com/forum/#!forum/hazelcast).
+
 
 

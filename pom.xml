@@ -23,7 +23,7 @@
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-root</artifactId>
     <packaging>pom</packaging>
-    <version>3.2-RC3-SNAPSHOT</version>
+    <version>3.3-SNAPSHOT</version>
     <name>Hazelcast Root</name>
     <description>Hazelcast In-Memory DataGrid</description>
     <url>http://www.hazelcast.com/</url>
@@ -35,7 +35,7 @@
         <module>hazelcast-wm</module>
         <module>hazelcast-spring</module>
         <module>hazelcast-cloud</module>
-        <module>hazelcast-ra</module>
+        <!--<module>hazelcast-ra</module>-->
     </modules>
 
     <properties>
@@ -68,7 +68,12 @@
         <log4j.version>1.2.12</log4j.version>
         <slf4j.api.version>1.6.0</slf4j.api.version>
         <main.basedir>${project.basedir}</main.basedir>
-        <jacoco.version>0.6.5.201403032054</jacoco.version>
+        <jacoco.version>0.7.0.201403182114</jacoco.version>
+        <sonar.jacoco.jar>${basedir}/lib/jacocoagent.jar</sonar.jacoco.jar>
+        <sonar.phase>post-integration-test</sonar.phase>
+        <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
+        <sonar.language>java</sonar.language>
+        <sonar.verbose>true</sonar.verbose>
     </properties>
     <licenses>
         <license>
@@ -135,18 +140,7 @@
         </resources>
 
         <plugins>
-            <plugin>
-                <groupId>org.jacoco</groupId>
-                <artifactId>jacoco-maven-plugin</artifactId>
-                <version>${jacoco.version}</version>
-                <configuration>
-                    <excludes>
-                        <exclude>com/hazelcast/examples/**/*.class</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-
-            <plugin>
+              <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>${maven.assembly.plugin.version}</version>
@@ -192,11 +186,9 @@
                         -Dhazelcast.test.use.network=false
                     </argLine>
                     <groups>com.hazelcast.test.annotation.QuickTest</groups>
-                    <excludedGroups>com.hazelcast.test.annotation.NightlyTest</excludedGroups>
-                    <excludedGroups>com.hazelcast.test.annotation.ProblematicTest</excludedGroups>
+                    <excludedGroups>com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.ProblematicTest</excludedGroups>
                 </configuration>
             </plugin>
-
         </plugins>
     </build>
 
@@ -206,60 +198,11 @@
             <build>
                 <plugins>
                     <plugin>
-                        <groupId>org.jacoco</groupId>
-                        <artifactId>jacoco-maven-plugin</artifactId>
-                        <version>${jacoco.version}</version>
-                        <executions>
-                            <execution>
-                                <id>default-prepare-agent</id>
-                                <goals>
-                                    <goal>prepare-agent</goal>
-                                </goals>
-                            </execution>
-                            <execution>
-                                <id>default-report</id>
-                                <phase>test</phase>
-                                <goals>
-                                    <goal>report</goal>
-                                </goals>
-                                <configuration>
-                                    <excludes>
-                                        <exclude>**/ClientTestApp.class</exclude>
-                                    </excludes>
-                                </configuration>
-                            </execution>
-                            <!-- execution>
-                                <id>default-check</id>
-                                <goals>
-                                    <goal>check</goal>
-                                </goals>
-                                <configuration>
-                                    <rules>
-                                        <rule implementation="org.jacoco.maven.RuleConfiguration">
-                                            <element>BUNDLE</element>
-                                            <limits>
-                                                <limit implementation="org.jacoco.report.check.Limit">
-                                                    <counter>COMPLEXITY</counter>
-                                                    <value>COVEREDRATIO</value>
-                                                    <minimum>0.60</minimum>
-                                                </limit>
-                                            </limits>
-                                        </rule>
-                                    </rules>
-                                </configuration>
-                            </execution -->
-                        </executions>
-                    </plugin>
-
-                    <!-- we need to copy the sure-fire plugin because we need to add a argLine variable for jacoco-->
-                    <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <version>${maven.surefire.plugin.version}</version>
                         <configuration combine.self="override">
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
-                          <!--       ${argLine} -->
-
                             <argLine>
                                 -Xms128m -Xmx1G -XX:MaxPermSize=128M
                                 -Dhazelcast.version.check.enabled=false
@@ -267,12 +210,127 @@
                                 -Dhazelcast.logging.type=none
                                 -Dhazelcast.test.use.network=false
                             </argLine>
-                            <groups>com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest</groups>
-                            <excludedGroups>com.hazelcast.test.annotation.NightlyTest</excludedGroups>
-                            <excludedGroups>com.hazelcast.test.annotation.ProblematicTest</excludedGroups>
+
+                               <groups>com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest</groups>
+                            <excludedGroups>com.hazelcast.test.annotation.NightlyTest,com.hazelcast.test.annotation.ProblematicTest</excludedGroups>
                         </configuration>
                     </plugin>
 
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+             <id>test-coverage-nightly</id>
+            <properties>
+                <coverage.reports.dir>${basedir}/target/coverage-reports</coverage.reports.dir>
+                <sonar.jacoco.reportPath>${coverage.reports.dir}/jacoco.exec</sonar.jacoco.reportPath>
+                <sonar.jacoco.itReportPath>${coverage.reports.dir}/jacoco-it.exec</sonar.jacoco.itReportPath>
+            </properties>
+            <build>
+                <plugins>
+
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>${jacoco.version}</version>
+                        <configuration>
+                             <append>true</append>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>pre-unit-test</id>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>post-unit-test</id>
+                                <phase>test</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>pre-integration-test</id>
+                                <phase>pre-integration-test</phase>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                                <configuration>
+                                    <destFile>${sonar.jacoco.itReportPath}</destFile>
+                                    <propertyName>failsafe.argLine</propertyName>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>post-integration-test</id>
+                                <phase>post-integration-test</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                                <configuration>
+                                    <dataFile>${sonar.jacoco.itReportPath}</dataFile>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>${maven.surefire.plugin.version}</version>
+                        <configuration combine.self="override">
+                            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <argLine>
+                                -Xms128m -Xmx1G -XX:MaxPermSize=128M
+                                -Dhazelcast.version.check.enabled=false
+                                -Dhazelcast.mancenter.enabled=false
+                                -Dhazelcast.logging.type=none
+                                -Dhazelcast.test.use.network=false
+                            </argLine>
+
+                            <includes>
+                                <include>**/ExecutorConfigTest*.java</include>
+                                <include>**/TopicTest*.java</include>
+                                <include>**/LockTest*.java</include>
+                            </includes>
+
+                            <groups>com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest</groups>
+                            <excludedGroups>com.hazelcast.test.annotation.NightlyTest,com.hazelcast.test.annotation.ProblematicTest</excludedGroups>
+                        </configuration>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>2.14</version>
+                        <configuration combine.self="override">
+                            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <argLine>
+                                ${jacoco.agent.argLine}
+                                -Xms129m -Xmx1G -XX:MaxPermSize=129M
+                                -Dhazelcast.version.check.enabled=false
+                                -Dhazelcast.mancenter.enabled=false
+                                -Dhazelcast.logging.type=none
+                                -Dhazelcast.test.use.network=true
+                            </argLine>
+                            <includes>
+                                <include>**/AtomicLongTest*.java</include>
+                                <include>**/AtomicReferenceTest*.java</include>
+                            </includes>
+                            <groups>com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest</groups>
+
+                            <!--groups>com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest</groups>
+                            <excludedGroups>com.hazelcast.test.annotation.ProblematicTest</excludedGroups -->
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
                 </plugins>
             </build>
         </profile>
@@ -529,6 +587,8 @@
             <id>nightly-build</id>
             <build>
                 <plugins>
+
+
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>

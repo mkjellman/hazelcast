@@ -54,6 +54,7 @@ import com.hazelcast.spi.impl.EventServiceImpl;
 import com.hazelcast.spi.impl.ResponseHandlerFactory;
 import com.hazelcast.transaction.impl.TransactionSupport;
 import com.hazelcast.util.*;
+import com.hazelcast.util.scheduler.EntryTaskScheduler;
 import com.hazelcast.util.scheduler.ScheduledEntry;
 import com.hazelcast.wan.WanReplicationEvent;
 
@@ -740,6 +741,8 @@ public class MapService implements ManagedService, MigrationAwareService,
 
     public void applyRecordInfo(Record record, String mapName, RecordInfo replicationInfo) {
         record.setStatistics(replicationInfo.getStatistics());
+        record.setVersion(replicationInfo.getVersion());
+
         if (replicationInfo.getIdleDelayMillis() >= 0) {
             scheduleIdleEviction(mapName, record.getKey(), replicationInfo.getIdleDelayMillis());
         }
@@ -754,41 +757,60 @@ public class MapService implements ManagedService, MigrationAwareService,
         }
     }
 
-    public RecordReplicationInfo createRecordReplicationInfo(MapContainer mapContainer, Record record, Data key) {
-        ScheduledEntry idleScheduledEntry = mapContainer.getIdleEvictionScheduler() == null ? null : mapContainer.getIdleEvictionScheduler().get(key);
-        long idleDelay = idleScheduledEntry == null ? -1 : replicaWaitSecondsForScheduledTasks + findDelayMillis(idleScheduledEntry);
-
-        ScheduledEntry ttlScheduledEntry = mapContainer.getTtlEvictionScheduler() == null ? null : mapContainer.getTtlEvictionScheduler().get(key);
-        long ttlDelay = ttlScheduledEntry == null ? -1 : replicaWaitSecondsForScheduledTasks + findDelayMillis(ttlScheduledEntry);
-
-        ScheduledEntry writeScheduledEntry = mapContainer.getMapStoreWriteScheduler() == null ? null : mapContainer.getMapStoreWriteScheduler().get(key);
-        long writeDelay = writeScheduledEntry == null ? -1 : replicaWaitSecondsForScheduledTasks + findDelayMillis(writeScheduledEntry);
-
-        ScheduledEntry deleteScheduledEntry = mapContainer.getMapStoreDeleteScheduler() == null ? null : mapContainer.getMapStoreDeleteScheduler().get(key);
-        long deleteDelay = deleteScheduledEntry == null ? -1 : replicaWaitSecondsForScheduledTasks + findDelayMillis(deleteScheduledEntry);
-
-        return new RecordReplicationInfo(record.getKey(), toData(record.getValue()), record.getStatistics(),
-                idleDelay, ttlDelay, writeDelay, deleteDelay);
+    public RecordReplicationInfo createRecordReplicationInfo(MapContainer mapContainer, Record record) {
+        final RecordInfo info = constructRecordInfo(mapContainer, record, replicaWaitSecondsForScheduledTasks);
+        final RecordReplicationInfo replicationInfo
+                = new RecordReplicationInfo(record.getKey(), toData(record.getValue()), info);
+        return replicationInfo;
     }
 
-    public RecordInfo createRecordInfo(MapContainer mapContainer, Record record, Data key) {
+    public RecordInfo createRecordInfo(MapContainer mapContainer, Record record) {
         // this info is created to be used in backups.
         // we added following latency (10 seconds) to be sure the ongoing promotion is completed if the owner of the record could not complete task before promotion
-        int backupDelay = getNodeEngine().getGroupProperties().MAP_REPLICA_WAIT_SECONDS_FOR_SCHEDULED_TASKS.getInteger() * 1000;
-        ScheduledEntry idleScheduledEntry = mapContainer.getIdleEvictionScheduler() == null ? null : mapContainer.getIdleEvictionScheduler().get(record.getKey());
-        long idleDelay = idleScheduledEntry == null ? -1 : backupDelay + findDelayMillis(idleScheduledEntry);
+        final int backupDelay = getNodeEngine().getGroupProperties().MAP_REPLICA_WAIT_SECONDS_FOR_SCHEDULED_TASKS.getInteger() * 1000;
+        return constructRecordInfo(mapContainer, record, backupDelay);
+    }
 
-        ScheduledEntry ttlScheduledEntry = mapContainer.getTtlEvictionScheduler() == null ? null : mapContainer.getTtlEvictionScheduler().get(key);
-        long ttlDelay = ttlScheduledEntry == null ? -1 : backupDelay + findDelayMillis(ttlScheduledEntry);
+    private RecordInfo constructRecordInfo(MapContainer mapContainer, Record record, int extraDelay) {
+        final RecordInfo info = new RecordInfo();
+        info.setStatistics(record.getStatistics());
+        info.setVersion(record.getVersion());
+        setDelays(mapContainer, info, record.getKey(), extraDelay);
+        return info;
+    }
 
-        ScheduledEntry writeScheduledEntry = mapContainer.getMapStoreWriteScheduler() == null ? null : mapContainer.getMapStoreWriteScheduler().get(key);
-        long writeDelay = writeScheduledEntry == null ? -1 : backupDelay + findDelayMillis(writeScheduledEntry);
+    private void setDelays(MapContainer mapContainer, RecordInfo info, Data key, int extraDelay) {
+        long deleteDelay = -1;
+        long writeDelay = -1;
+        long idleDelay;
+        long ttlDelay;
+        if (mapContainer.getMapStoreScheduler() != null) {
+            final ScheduledEntry scheduledEntry = mapContainer.getMapStoreScheduler().get(key);
+            if (scheduledEntry != null) {
+                if (scheduledEntry.getValue() == null) {
+                    deleteDelay = extraDelay + findDelayMillis(scheduledEntry);
+                } else {
+                    writeDelay = extraDelay + findDelayMillis(scheduledEntry);
+                }
+            }
+        }
+        idleDelay = getDelay(mapContainer.getIdleEvictionScheduler(), key, extraDelay);
+        ttlDelay = getDelay(mapContainer.getTtlEvictionScheduler(), key, extraDelay);
+        // set delays.
+        info.setMapStoreDeleteDelayMillis(deleteDelay);
+        info.setMapStoreWriteDelayMillis(writeDelay);
+        info.setIdleDelayMillis(idleDelay);
+        info.setTtlDelayMillis(ttlDelay);
+    }
 
-        ScheduledEntry deleteScheduledEntry = mapContainer.getMapStoreDeleteScheduler() == null ? null : mapContainer.getMapStoreDeleteScheduler().get(key);
-        long deleteDelay = deleteScheduledEntry == null ? -1 : backupDelay + findDelayMillis(deleteScheduledEntry);
-
-        return new RecordInfo(record.getStatistics(),
-                idleDelay, ttlDelay, writeDelay, deleteDelay);
+    private long getDelay(EntryTaskScheduler entryTaskScheduler, Data key, int extraDelay) {
+        if (entryTaskScheduler != null) {
+            final ScheduledEntry entry = entryTaskScheduler.get(key);
+            if (entry != null) {
+                return extraDelay + findDelayMillis(entry);
+            }
+        }
+        return -1;
     }
 
     public long findDelayMillis(ScheduledEntry entry) {
@@ -880,11 +902,11 @@ public class MapService implements ManagedService, MigrationAwareService,
     }
 
     public void scheduleMapStoreWrite(String mapName, Data key, Object value, long delay) {
-        getMapContainer(mapName).getMapStoreWriteScheduler().schedule(delay, key, value);
+        getMapContainer(mapName).getMapStoreScheduler().schedule(delay, key, value);
     }
 
     public void scheduleMapStoreDelete(String mapName, Data key, long delay) {
-        getMapContainer(mapName).getMapStoreDeleteScheduler().schedule(delay, key, null);
+        getMapContainer(mapName).getMapStoreScheduler().schedule(delay, key, null);
     }
 
     public SerializationService getSerializationService() {
@@ -1222,8 +1244,8 @@ public class MapService implements ManagedService, MigrationAwareService,
             }
         }
 
-        if (mapContainer.getMapStoreWriteScheduler() != null && mapContainer.getMapStoreDeleteScheduler() != null) {
-            dirtyCount = mapContainer.getMapStoreWriteScheduler().size() + mapContainer.getMapStoreDeleteScheduler().size();
+        if (mapContainer.getMapStoreScheduler() != null) {
+            dirtyCount = mapContainer.getMapStoreScheduler().size();
         }
         localMapStats.setBackupCount(backupCount);
         localMapStats.setDirtyEntryCount(zeroOrPositive(dirtyCount));

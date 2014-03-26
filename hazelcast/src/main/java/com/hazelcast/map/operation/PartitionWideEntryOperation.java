@@ -18,23 +18,24 @@ package com.hazelcast.map.operation;
 
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.ManagedContext;
-import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.EntryBackupProcessor;
+import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.MapEntrySet;
 import com.hazelcast.map.MapEntrySimple;
 import com.hazelcast.map.RecordStore;
 import com.hazelcast.map.SimpleEntryView;
 import com.hazelcast.map.record.Record;
+import com.hazelcast.monitor.impl.LocalMapStatsImpl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.SerializationService;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.QueryEntry;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.util.Clock;
-
 import java.io.IOException;
 import java.util.AbstractMap;
 import java.util.Map;
@@ -42,7 +43,8 @@ import java.util.Map;
 /**
  * GOTCHA : This operation does not load missing keys from mapstore for now.
  */
-public class PartitionWideEntryOperation extends AbstractMapOperation implements BackupAwareOperation, PartitionAwareOperation {
+public class PartitionWideEntryOperation extends AbstractMapOperation
+        implements BackupAwareOperation, PartitionAwareOperation {
 
     private static final EntryEventType __NO_NEED_TO_FIRE_EVENT = null;
     EntryProcessor entryProcessor;
@@ -65,19 +67,23 @@ public class PartitionWideEntryOperation extends AbstractMapOperation implements
         response = new MapEntrySet();
         MapEntrySimple entry;
         final RecordStore recordStore = mapService.getRecordStore(getPartitionId(), name);
+        final LocalMapStatsImpl mapStats = mapService.getLocalMapStatsImpl(name);
         final Map<Data, Record> records = recordStore.getReadonlyRecordMap();
         for (final Map.Entry<Data, Record> recordEntry : records.entrySet()) {
+            final long start = System.currentTimeMillis();
             final Data dataKey = recordEntry.getKey();
             final Record record = recordEntry.getValue();
-            final Object valueBeforeProcess = mapService.toObject(record.getValue());
+            final Object valueBeforeProcess = record.getValue();
+            final Object valueBeforeProcessObject = mapService.toObject(valueBeforeProcess);
             Object objectKey = mapService.toObject(record.getKey());
             if (getPredicate() != null) {
-                QueryEntry queryEntry = new QueryEntry(getNodeEngine().getSerializationService(), dataKey, objectKey, valueBeforeProcess);
+                final SerializationService ss = getNodeEngine().getSerializationService();
+                QueryEntry queryEntry = new QueryEntry(ss, dataKey, objectKey, valueBeforeProcessObject);
                 if (!getPredicate().apply(queryEntry)) {
                     continue;
                 }
             }
-            entry = new MapEntrySimple(objectKey, valueBeforeProcess);
+            entry = new MapEntrySimple(objectKey, valueBeforeProcessObject);
             final Object result = entryProcessor.process(entry);
             final Object valueAfterProcess = entry.getValue();
             Data dataValue = null;
@@ -89,15 +95,19 @@ public class PartitionWideEntryOperation extends AbstractMapOperation implements
             EntryEventType eventType;
             if (valueAfterProcess == null) {
                 recordStore.remove(dataKey);
+                mapStats.incrementRemoves(getLatencyFrom(start));
                 eventType = EntryEventType.REMOVED;
             } else {
-                if (valueBeforeProcess == null) {
+                if (valueBeforeProcessObject == null) {
+                    mapStats.incrementPuts(getLatencyFrom(start));
                     eventType = EntryEventType.ADDED;
                 }
                 // take this case as a read so no need to fire an event.
                 else if (!entry.isModified()) {
+                    mapStats.incrementGets(getLatencyFrom(start));
                     eventType = __NO_NEED_TO_FIRE_EVENT;
                 } else {
+                    mapStats.incrementPuts(getLatencyFrom(start));
                     eventType = EntryEventType.UPDATED;
                 }
                 // todo if this is a read only operation, record access operations should be done.
@@ -106,7 +116,9 @@ public class PartitionWideEntryOperation extends AbstractMapOperation implements
                 }
             }
             if (eventType != __NO_NEED_TO_FIRE_EVENT) {
-                mapService.publishEvent(getCallerAddress(), name, eventType, dataKey, mapService.toData(record.getValue()), dataValue);
+                final Data oldValue = mapService.toData(valueBeforeProcess);
+                final Data value = mapService.toData(valueAfterProcess);
+                mapService.publishEvent(getCallerAddress(), name, eventType, dataKey, oldValue, value);
                 if (mapService.isNearCacheAndInvalidationEnabled(name)) {
                     mapService.invalidateAllNearCaches(name, dataKey);
                 }
@@ -115,7 +127,8 @@ public class PartitionWideEntryOperation extends AbstractMapOperation implements
                         mapService.publishWanReplicationRemove(name, dataKey, Clock.currentTimeMillis());
                     } else {
                         Record r = recordStore.getRecord(dataKey);
-                        SimpleEntryView entryView = new SimpleEntryView(dataKey, mapService.toData(dataValue), r.getStatistics(), r.getCost(), r.getVersion());
+                        SimpleEntryView entryView = new SimpleEntryView(dataKey,
+                                dataValue, r.getStatistics(), r.getCost(), r.getVersion());
                         mapService.publishWanReplicationUpdate(name, entryView);
                     }
                 }
@@ -172,4 +185,9 @@ public class PartitionWideEntryOperation extends AbstractMapOperation implements
         EntryBackupProcessor backupProcessor = entryProcessor.getBackupProcessor();
         return backupProcessor != null ? new PartitionWideEntryBackupOperation(name, backupProcessor) : null;
     }
+
+    private long getLatencyFrom(long begin) {
+        return Clock.currentTimeMillis() - begin;
+    }
+
 }

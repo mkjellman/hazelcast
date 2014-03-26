@@ -21,50 +21,46 @@ import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IList;
 import com.hazelcast.core.TransactionalList;
-import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.transaction.TransactionContext;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.*;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.test.HazelcastTestSupport.randomString;
 import static org.junit.Assert.*;
 
 /**
  * @author ali 6/11/13
  */
-@RunWith(HazelcastSerialClassRunner.class)
+@RunWith(HazelcastParallelClassRunner.class)
 @Category(QuickTest.class)
 public class ClientTxnListTest {
-
-    static final String name = "test";
-    static HazelcastInstance hz;
+    static HazelcastInstance client;
     static HazelcastInstance server;
-    static HazelcastInstance second;
 
     @BeforeClass
     public static void init(){
         server = Hazelcast.newHazelcastInstance();
-//        second = Hazelcast.newHazelcastInstance();
-        hz = HazelcastClient.newHazelcastClient(null);
+        client = HazelcastClient.newHazelcastClient(null);
     }
 
     @AfterClass
     public static void destroy() {
-        hz.shutdown();
+        HazelcastClient.shutdownAll();
         Hazelcast.shutdownAll();
     }
 
     @Test
     public void testAddRemove() throws Exception {
-        final IList l = hz.getList(name);
+        String listName = randomString();
+        final IList l = client.getList(listName);
         l.add("item1");
 
-        final TransactionContext context = hz.newTransactionContext();
+        final TransactionContext context = client.newTransactionContext();
         context.beginTransaction();
-        final TransactionalList<Object> list = context.getList(name);
+        final TransactionalList<Object> list = context.getList(listName);
         assertTrue(list.add("item2"));
         assertEquals(2, list.size());
         assertEquals(1, l.size());
@@ -74,6 +70,20 @@ public class ClientTxnListTest {
         context.commitTransaction();
 
         assertEquals(1, l.size());
+    }
 
+    @Test
+    public void testAddAndRoleBack() throws Exception {
+        final String listName = randomString();
+        final IList l = client.getList(listName);
+        l.add("item1");
+
+        final TransactionContext context = client.newTransactionContext();
+        context.beginTransaction();
+        final TransactionalList<Object> list = context.getList(listName);
+        list.add("item2");
+        context.rollbackTransaction();
+
+        assertEquals(1, l.size());
     }
 }

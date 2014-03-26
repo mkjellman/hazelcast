@@ -46,8 +46,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class ClientNearCache<K> {
 
-    static final int evictionPercentage = 20;
-    static final int cleanupInterval = 5000;
+    public static final int EVICTION_PERCENTAGE = 20;
+    public static final int TTL_CLEANUP_INTERVAL_MILLS = 5000;
     final ClientNearCacheType cacheType;
     final int maxSize;
     volatile long lastCleanup;
@@ -63,7 +63,7 @@ public class ClientNearCache<K> {
     final ConcurrentMap<K, CacheRecord<K>> cache;
     public static final Object NULL_OBJECT = new Object();
     String registrationId = null;
-    final NearCacheStatsImpl stats;
+    final NearCacheStatsImpl clientNearCacheStats;
     private final Comparator<CacheRecord<K>> comparator = new Comparator<CacheRecord<K>>() {
         public int compare(CacheRecord<K> o1, CacheRecord<K> o2) {
             if (EvictionPolicy.LRU.equals(evictionPolicy))
@@ -90,7 +90,7 @@ public class ClientNearCache<K> {
         canCleanUp = new AtomicBoolean(true);
         canEvict = new AtomicBoolean(true);
         lastCleanup = Clock.currentTimeMillis();
-        stats = new NearCacheStatsImpl();
+        clientNearCacheStats = new NearCacheStatsImpl();
         if (invalidateOnChange) {
             addInvalidateListener();
         }
@@ -146,7 +146,7 @@ public class ClientNearCache<K> {
                         try {
                             TreeSet<CacheRecord<K>> records = new TreeSet<CacheRecord<K>>(comparator);
                             records.addAll(cache.values());
-                            int evictSize = cache.size() * evictionPercentage / 100;
+                            int evictSize = cache.size() * EVICTION_PERCENTAGE / 100;
                             int i=0;
                             for (CacheRecord<K> record : records) {
                                 cache.remove(record.key);
@@ -167,7 +167,7 @@ public class ClientNearCache<K> {
     }
 
     private void fireTtlCleanup() {
-        if (Clock.currentTimeMillis() < (lastCleanup + cleanupInterval))
+        if (Clock.currentTimeMillis() < (lastCleanup + TTL_CLEANUP_INTERVAL_MILLS))
             return;
 
         if (canCleanUp.compareAndSet(true, false)) {
@@ -198,19 +198,19 @@ public class ClientNearCache<K> {
         fireTtlCleanup();
         CacheRecord<K> record = cache.get(key);
         if (record != null) {
-            record.access();
             if (record.expired()) {
                 cache.remove(key);
-                stats.incrementMisses();
+                clientNearCacheStats.incrementMisses();
                 return null;
             }
             if (record.value.equals(NULL_OBJECT)){
-                stats.incrementMisses();
+                clientNearCacheStats.incrementMisses();
                 return NULL_OBJECT;
             }
+            record.access();
             return inMemoryFormat.equals(InMemoryFormat.BINARY) ? context.getSerializationService().toObject((Data)record.value) : record.value;
         } else {
-            stats.incrementMisses();
+            clientNearCacheStats.incrementMisses();
             return null;
         }
     }
@@ -220,19 +220,14 @@ public class ClientNearCache<K> {
     }
 
     private NearCacheStatsImpl createNearCacheStats() {
-        long ownedEntryCount = 0;
+        long ownedEntryCount = cache.values().size();
         long ownedEntryMemory = 0;
-        long hits = 0;
-        for (CacheRecord record : cache.values())
-        {
-            ownedEntryCount++;
+        for (CacheRecord record : cache.values()){
             ownedEntryMemory += record.getCost();
-            hits += record.hit.get();
         }
-        stats.setOwnedEntryCount(ownedEntryCount);
-        stats.setOwnedEntryMemoryCost(ownedEntryMemory);
-        stats.setHits(hits);
-        return stats;
+        clientNearCacheStats.setOwnedEntryCount(ownedEntryCount);
+        clientNearCacheStats.setOwnedEntryMemoryCost(ownedEntryMemory);
+        return clientNearCacheStats;
     }
 
     public void destroy() {
@@ -267,6 +262,7 @@ public class ClientNearCache<K> {
 
         void access() {
             hit.incrementAndGet();
+            clientNearCacheStats.incrementHits();
             lastAccessTime = Clock.currentTimeMillis();
         }
 
